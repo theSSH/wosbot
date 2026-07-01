@@ -1,9 +1,5 @@
 package dev.frostguard.engine.service;
 
-import dev.frostguard.engine.listener.StaminaChangeListener;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Objects;
@@ -13,6 +9,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import dev.frostguard.engine.listener.StaminaChangeListener;
 
 /**
  * Tracks per-account energy levels and drives a background regeneration
