@@ -7,7 +7,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import dev.frostguard.vision.convert.GameTimeUtils;
@@ -42,6 +44,7 @@ public class GatherRoutine extends DelayedTask {
     private static final int DEFAULT_LEVEL = 5;
     private static final boolean DEFAULT_REMOVE_HEROES = false;
     private static final boolean DEFAULT_INTEL_SMART = false;
+    private static final int PENDING_HIGH_PRIORITY_RETRY_MINUTES = 5;
 
     // Region Constants (UI)
     private static final MarchQueueRegion[] MARCH_QUEUES = {
@@ -71,6 +74,8 @@ public class GatherRoutine extends DelayedTask {
     private static final PointData LEVEL_LOCK_BTN = new PointData(183, 1140);
     private static final PointData SEARCH_EXEC_TL = new PointData(301, 1200);
     private static final PointData SEARCH_EXEC_BR = new PointData(412, 1229);
+    private static final PointData RECALL_CONFIRM_TL = new PointData(446, 780);
+    private static final PointData RECALL_CONFIRM_BR = new PointData(578, 800);
 
     private final DailyTaskRepository dailyTaskRepository = DailyTaskRepository.getRepository();
 
@@ -107,16 +112,50 @@ public class GatherRoutine extends DelayedTask {
             return;
         if (checkGatherSpeedWait())
             return;
-        if (GatherQueuePolicy.hasPendingHigherPriorityMarchTask(profile)) {
-            logInfo("Deferring gather deployment because a higher-priority march task is pending.");
-            reschedule(LocalDateTime.now().plusMinutes(2));
-            return;
-        }
-
         // 1. Scan Active Marches
         List<GatherType> activeMarches = scanActiveMarches();
         int activeCount = activeMarches.size();
         logInfo(String.format("Active Marches: %d / %d", activeCount, activeQueues));
+
+        // Changed by pernerch | Date: 2026-07-02 | Why: continuously self-heal gather state
+        // by recalling duplicate gather marches when active gathers exceed configured queue limit.
+        int recalledOverflow = recallDuplicateOverflowGatherMarchesFlow();
+        if (recalledOverflow > 0) {
+            logInfo(String.format(
+                "Corrected gather overflow by recalling %d duplicate march(es). Re-scanning active marches.",
+                recalledOverflow));
+            sleepTask(500);
+            earliestReschedule = null;
+            activeMarches = scanActiveMarches();
+            activeCount = activeMarches.size();
+            logInfo(String.format("Active Marches after correction: %d / %d", activeCount, activeQueues));
+        }
+
+        // Changed by pernerch | Date: 2026-07-02 | Why: when higher-priority tasks are pending,
+        // defer based on real active-march timing instead of a blind fixed delay.
+        List<TpDailyTaskEnum> pendingHigherPriorityTasks = GatherQueuePolicy.getPendingHigherPriorityMarchTasks(profile);
+        if (!pendingHigherPriorityTasks.isEmpty()) {
+            if (activeCount > 0) {
+                LocalDateTime next = earliestReschedule != null ? earliestReschedule : LocalDateTime.now().plusMinutes(5);
+                logInfo(String.format(
+                "Deferring gather deployment because higher-priority march task(s) are pending: %s. " +
+                    "%d gather march(es) are outside; next return at %s.",
+                pendingHigherPriorityTasks,
+                        activeCount,
+                        GameTimeUtils.formatCountdown(next)));
+                reschedule(next);
+            } else {
+            LocalDateTime retryAt = LocalDateTime.now().plusMinutes(PENDING_HIGH_PRIORITY_RETRY_MINUTES);
+            logInfo(String.format(
+                "Deferring gather deployment because higher-priority march task(s) are pending: %s. " +
+                    "No active gather marches are outside; retrying in %d minutes at %s to avoid noisy rechecks.",
+                pendingHigherPriorityTasks,
+                PENDING_HIGH_PRIORITY_RETRY_MINUTES,
+                GameTimeUtils.formatCountdown(retryAt)));
+            reschedule(retryAt);
+            }
+            return;
+        }
 
         // 2. Fill Queues (Persistent Rotation)
         fillQueues(activeCount, activeMarches);
@@ -128,6 +167,7 @@ public class GatherRoutine extends DelayedTask {
     // ================= CONFIGURATION =================
 
     private void loadConfig() {
+        // Changed by pernerch | Date: 2026-07-02 | Why: centralize queue limit via policy for consistent hard-cap behavior.
         this.activeQueues = GatherQueuePolicy.resolveActiveQueueLimit(
                 get(ConfigurationKeyEnum.GATHER_ACTIVE_MARCH_QUEUE_INT, DEFAULT_QUEUES));
         this.removeHeroes = get(ConfigurationKeyEnum.GATHER_REMOVE_HEROS_BOOL, DEFAULT_REMOVE_HEROES);
@@ -291,9 +331,177 @@ public class GatherRoutine extends DelayedTask {
         return active;
     }
 
+    // Changed by pernerch | Date: 2026-07-02 | Why: enforce configured gather queue size by
+    // recalling duplicate long-running marches whenever active gather count overflows.
+    private int recallDuplicateOverflowGatherMarchesFlow() {
+        List<ActiveGatherMarchCandidate> candidates = collectActiveGatherMarchCandidatesFlow();
+        int overflow = candidates.size() - activeQueues;
+        if (overflow <= 0) {
+            return 0;
+        }
+
+        // Changed by pernerch | Date: 2026-07-02 | Why: always honor configured gather types first;
+        // marches on disabled resource types are recalled before duplicate-type cleanup.
+        List<ActiveGatherMarchCandidate> disabledTypeCandidates = candidates.stream()
+                .filter(candidate -> !enabledTypes.contains(candidate.type()))
+                .sorted(Comparator.comparing(ActiveGatherMarchCandidate::returnTime).reversed())
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        List<ActiveGatherMarchCandidate> duplicateCandidates = candidates.stream()
+                .collect(Collectors.groupingBy(ActiveGatherMarchCandidate::type))
+                .values()
+                .stream()
+                .filter(group -> group.size() > 1)
+                .flatMap(List::stream)
+                .sorted(Comparator.comparing(ActiveGatherMarchCandidate::returnTime).reversed())
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        // Changed by pernerch | Date: 2026-07-02 | Why: if overflow remains after disabled/duplicate
+        // cleanup, recall longest-return marches to guarantee configured queue cap.
+        List<ActiveGatherMarchCandidate> fallbackCandidates = candidates.stream()
+                .sorted(Comparator.comparing(ActiveGatherMarchCandidate::returnTime).reversed())
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        int recalled = 0;
+        Set<Integer> recalledQueues = new HashSet<>();
+
+        while (overflow > 0) {
+            ActiveGatherMarchCandidate candidate = null;
+            RecallReason recallReason = null;
+
+            while (candidate == null && !disabledTypeCandidates.isEmpty()) {
+                ActiveGatherMarchCandidate next = disabledTypeCandidates.remove(0);
+                if (!recalledQueues.contains(next.queueIndex())) {
+                    candidate = next;
+                    recallReason = RecallReason.DISABLED_TYPE;
+                }
+            }
+
+            while (candidate == null && !duplicateCandidates.isEmpty()) {
+                ActiveGatherMarchCandidate next = duplicateCandidates.remove(0);
+                if (!recalledQueues.contains(next.queueIndex())) {
+                    candidate = next;
+                    recallReason = RecallReason.DUPLICATE_TYPE;
+                }
+            }
+
+            while (candidate == null && !fallbackCandidates.isEmpty()) {
+                ActiveGatherMarchCandidate next = fallbackCandidates.remove(0);
+                if (!recalledQueues.contains(next.queueIndex())) {
+                    candidate = next;
+                    recallReason = RecallReason.OVERFLOW_FALLBACK;
+                }
+            }
+
+            if (candidate == null) {
+                break;
+            }
+
+            if (recallGatherMarchByQueueFlow(candidate, recallReason)) {
+                recalled++;
+                overflow--;
+                recalledQueues.add(candidate.queueIndex());
+            }
+        }
+
+        return recalled;
+    }
+
+    // Changed by pernerch | Date: 2026-07-02 | Why: build a typed snapshot of active gather
+    // marches (type, queue row, return time) to support deterministic overflow correction.
+    private List<ActiveGatherMarchCandidate> collectActiveGatherMarchCandidatesFlow() {
+        List<ActiveGatherMarchCandidate> candidates = new ArrayList<>();
+        marchHelper.openLeftMenuCitySection(false);
+
+        try {
+            PointData limit = new PointData(415,
+                    MARCH_QUEUES[MARCH_QUEUES.length - 1].bottomRight.getY());
+
+            for (GatherType type : GatherType.values()) {
+                List<ImageSearchResultData> results = templateSearchHelper.locateAllPatterns(
+                        type.template,
+                        SearchConfig.builder()
+                                .withArea(new AreaData(MARCH_QUEUES[0].topLeft, limit))
+                                .withMaxAttempts(3)
+                                .withMaxResults(MARCH_QUEUES.length)
+                                .withDelay(3)
+                                .build());
+
+                for (ImageSearchResultData result : results) {
+                    int queueIndex = findQueueIndex(result.getPoint());
+                    if (queueIndex < 0) {
+                        continue;
+                    }
+
+                    LocalDateTime returnTime = readReturnTime(queueIndex);
+                    if (returnTime == null) {
+                        returnTime = LocalDateTime.now().plusMinutes(5);
+                    }
+
+                    candidates.add(new ActiveGatherMarchCandidate(type, queueIndex, returnTime));
+                }
+            }
+
+            return candidates;
+        } finally {
+            marchHelper.closeLeftMenu();
+        }
+    }
+
+    // Changed by pernerch | Date: 2026-07-02 | Why: target a specific gather row for recall
+    // so overflow cleanup removes the intended duplicate march.
+    private boolean recallGatherMarchByQueueFlow(ActiveGatherMarchCandidate candidate, RecallReason reason) {
+        int queueIndex = candidate.queueIndex();
+        // Changed by pernerch | Date: 2026-07-02 | Why: enforce world context before opening
+        // march list to avoid recall misses caused by transient non-world UI states.
+        navigationHelper.ensureCorrectScreenLocation(LaunchPoint.WORLD);
+        sleepTask(250);
+        marchHelper.openLeftMenuCitySection(false);
+        try {
+            PointData limit = new PointData(415,
+                    MARCH_QUEUES[MARCH_QUEUES.length - 1].bottomRight.getY());
+
+            List<ImageSearchResultData> recallButtons = templateSearchHelper.locateAllPatterns(
+                    TemplatesEnum.MARCHES_AREA_RECALL_BUTTON,
+                    SearchConfig.builder()
+                            .withArea(new AreaData(MARCH_QUEUES[0].topLeft, limit))
+                            .withMaxAttempts(3)
+                            .withMaxResults(MARCH_QUEUES.length)
+                            .withDelay(3)
+                            .build());
+
+            if (recallButtons.isEmpty()) {
+                return false;
+            }
+
+            int targetCenterY = (MARCH_QUEUES[queueIndex].topLeft.getY() + MARCH_QUEUES[queueIndex].bottomRight.getY()) / 2;
+            ImageSearchResultData targetButton = recallButtons.stream()
+                    .min(Comparator.comparingInt(button -> Math.abs(button.getPoint().getY() - targetCenterY)))
+                    .orElse(null);
+
+            if (targetButton == null) {
+                return false;
+            }
+
+            tapRandomPoint(targetButton.getPoint(), targetButton.getPoint(), 1, 200);
+            tapRandomPoint(RECALL_CONFIRM_TL, RECALL_CONFIRM_BR, 1, 200);
+            // Changed by pernerch | Date: 2026-07-02 | Why: emit a deterministic recall reason
+            // so operators can verify why each gather march was recalled.
+            logInfo(String.format(
+                    "Gather overflow recall | reason=%s | queue=#%d | type=%s | return=%s",
+                    reason.logValue,
+                    queueIndex + 1,
+                    candidate.type(),
+                    GameTimeUtils.formatCountdown(candidate.returnTime())));
+            return true;
+        } finally {
+            marchHelper.closeLeftMenu();
+        }
+    }
+
     private List<ActiveMarchResult> checkActiveMarches(GatherType type) {
         PointData limit = new PointData(415,
-                MARCH_QUEUES[Math.min(activeQueues - 1, MARCH_QUEUES.length - 1)].bottomRight.getY());
+                MARCH_QUEUES[MARCH_QUEUES.length - 1].bottomRight.getY());
 
         // Fix: Use searchTemplates (plural) to find ALL matches of this type
         List<ImageSearchResultData> results = templateSearchHelper.locateAllPatterns(
@@ -301,7 +509,7 @@ public class GatherRoutine extends DelayedTask {
                 SearchConfig.builder()
                         .withArea(new AreaData(MARCH_QUEUES[0].topLeft, limit))
                         .withMaxAttempts(3)
-                        .withMaxResults(activeQueues)
+                        .withMaxResults(MARCH_QUEUES.length)
                         .withDelay(3).build());
 
         List<ActiveMarchResult> marchResults = new ArrayList<>();
@@ -440,7 +648,7 @@ public class GatherRoutine extends DelayedTask {
     // ================= HELPERS (UI/OCR) =================
 
     private int findQueueIndex(PointData p) {
-        int max = Math.min(activeQueues, MARCH_QUEUES.length);
+        int max = MARCH_QUEUES.length;
         for (int i = 0; i < max; i++) {
             MarchQueueRegion r = MARCH_QUEUES[i];
             if (p.getX() >= r.topLeft.getX() && p.getX() <= r.bottomRight.getX() &&
@@ -618,6 +826,21 @@ public class GatherRoutine extends DelayedTask {
 
         LocalDateTime getReturnTime() {
             return returnTime;
+        }
+    }
+
+    private record ActiveGatherMarchCandidate(GatherType type, int queueIndex, LocalDateTime returnTime) {
+    }
+
+    private enum RecallReason {
+        DISABLED_TYPE("disabled-type"),
+        DUPLICATE_TYPE("duplicate-type"),
+        OVERFLOW_FALLBACK("overflow-fallback");
+
+        private final String logValue;
+
+        RecallReason(String logValue) {
+            this.logValue = logValue;
         }
     }
 }

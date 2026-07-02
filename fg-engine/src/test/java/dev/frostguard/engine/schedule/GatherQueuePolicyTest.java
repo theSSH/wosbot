@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 class GatherQueuePolicyTest {
 
+    // Changed by pernerch | Date: 2026-07-02 | Why: regression guard for the gather queue hard-cap policy.
     @Test
     void capsConfiguredQueueCountAtFour() {
         assertEquals(4, GatherQueuePolicy.resolveActiveQueueLimit(8));
@@ -17,6 +18,7 @@ class GatherQueuePolicyTest {
         assertEquals(1, GatherQueuePolicy.resolveActiveQueueLimit(0));
     }
 
+    // Changed by pernerch | Date: 2026-07-02 | Why: verify duplicate resource marches remain blocked.
     @Test
     void preventsDuplicateMarchDeploymentsPerResource() {
         List<String> activeMarches = List.of("MEAT");
@@ -25,6 +27,7 @@ class GatherQueuePolicyTest {
         assertTrue(GatherQueuePolicy.allowMarchDeployment(activeMarches, "WOOD"));
     }
 
+    // Changed by pernerch | Date: 2026-07-02 | Why: verify gather defer behavior when Bear Trap/Intel is pending.
     @Test
     void defersGatherWhenHigherPriorityMarchTasksArePending() {
         assertTrue(GatherQueuePolicy.shouldDeferGatherForPendingTasks(List.of(TpDailyTaskEnum.BEAR_TRAP)));

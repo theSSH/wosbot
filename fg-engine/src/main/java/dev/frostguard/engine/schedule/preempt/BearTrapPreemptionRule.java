@@ -17,6 +17,7 @@ import dev.frostguard.engine.emulator.EmulatorController;
  */
 public class BearTrapPreemptionRule implements PreemptionRule {
 
+    // Changed by pernerch | Date: 2026-07-02 | Why: suppress repeated triggers to prevent Bear Trap preemption storms.
     private static final long SUPPRESS_DURATION_SECONDS = 30L;
     private LocalDateTime suppressUntil = LocalDateTime.MIN;
 
@@ -27,6 +28,7 @@ public class BearTrapPreemptionRule implements PreemptionRule {
         if (profile == null || profile.getEmulatorNumber() == null) {
             return false;
         }
+        // Changed by pernerch | Date: 2026-07-02 | Why: preempt only when Bear Trap is enabled for this profile.
         if (Boolean.FALSE.equals(profile.getConfig(ConfigurationKeyEnum.BEAR_TRAP_EVENT_BOOL, Boolean.class))) {
             return false;
         }

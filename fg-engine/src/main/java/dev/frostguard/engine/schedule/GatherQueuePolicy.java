@@ -12,7 +12,9 @@ import dev.frostguard.engine.service.TaskManagementService;
 
 public final class GatherQueuePolicy {
 
+    // Changed by pernerch | Date: 2026-07-02 | Why: hard-cap gather marches at 4 to prevent march-slot overcommitment.
     private static final int HARD_QUEUE_CAP = 4;
+    // Changed by pernerch | Date: 2026-07-02 | Why: prioritize Bear Trap/Intel so gather can defer when needed.
     private static final Set<TpDailyTaskEnum> HIGH_PRIORITY_MARCH_TASKS = Set.of(
             TpDailyTaskEnum.BEAR_TRAP,
             TpDailyTaskEnum.INTEL
@@ -25,6 +27,7 @@ public final class GatherQueuePolicy {
         if (configuredLimit <= 0) {
             return 1;
         }
+        // Changed by pernerch | Date: 2026-07-02 | Why: enforce the hard queue ceiling even if config is higher.
         return Math.min(HARD_QUEUE_CAP, configuredLimit);
     }
 
@@ -32,6 +35,7 @@ public final class GatherQueuePolicy {
         if (activeMarches == null || resourceName == null || resourceName.isBlank()) {
             return true;
         }
+        // Changed by pernerch | Date: 2026-07-02 | Why: block duplicate resource marches to avoid unnecessary recalls/wait.
         return activeMarches.stream().noneMatch(existing -> resourceName.equalsIgnoreCase(existing));
     }
 
@@ -49,14 +53,18 @@ public final class GatherQueuePolicy {
     }
 
     public static boolean hasPendingHigherPriorityMarchTask(AccountDescriptor profile) {
+        return !getPendingHigherPriorityMarchTasks(profile).isEmpty();
+    }
+
+    public static List<TpDailyTaskEnum> getPendingHigherPriorityMarchTasks(AccountDescriptor profile) {
         if (profile == null || profile.getId() == null) {
-            return false;
+            return List.of();
         }
         List<TpDailyTaskEnum> pendingTasks = Arrays.stream(TpDailyTaskEnum.values())
                 .filter(HIGH_PRIORITY_MARCH_TASKS::contains)
                 .filter(task -> isTaskPending(profile, task))
                 .collect(Collectors.toList());
-        return !pendingTasks.isEmpty();
+        return pendingTasks;
     }
 
     private static boolean isTaskPending(AccountDescriptor profile, TpDailyTaskEnum task) {

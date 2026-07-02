@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 class StaminaServiceTest {
 
+    // Changed by pernerch | Date: 2026-07-02 | Why: protect against over-reported stamina entering runtime state.
     @Test
     void setStaminaCapsValuesAboveTheGameLimit() {
         StaminaService service = StaminaService.getServices();
@@ -14,6 +15,7 @@ class StaminaServiceTest {
         assertEquals(200, service.getCurrentStamina(1001L));
     }
 
+    // Changed by pernerch | Date: 2026-07-02 | Why: ensure additive updates cannot exceed the stamina cap.
     @Test
     void addStaminaDoesNotExceedTheGameLimit() {
         StaminaService service = StaminaService.getServices();

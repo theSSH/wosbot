@@ -100,6 +100,24 @@ public class TaskQueue {
                 .anyMatch(t -> t.getDelay(TimeUnit.SECONDS) <= withinSec);
     }
 
+        // Changed by pernerch | Date: 2026-07-02 | Why: expose overdue runnable snapshot so
+        // peer queues on the same emulator can be prioritized before idle behavior closes/suspends.
+        public synchronized Optional<OverdueRunnableSnapshot> peekMostRelevantOverdueRunnableTask() {
+        LocalDateTime now = LocalDateTime.now();
+
+        return taskBacklog.stream()
+            .filter(t -> t.getDelay(TimeUnit.MILLISECONDS) <= 0)
+            .max(Comparator
+                .comparingInt((DelayedTask t) -> rankingStrategy.getPriority(t))
+                .thenComparingLong(t -> Duration.between(t.getScheduled(), now).getSeconds()))
+            .map(t -> new OverdueRunnableSnapshot(
+                t.getTaskName(),
+                t.getTpTask(),
+                rankingStrategy.getPriority(t),
+                Math.max(0, Duration.between(t.getScheduled(), now).getSeconds()),
+                t.getScheduled()));
+        }
+
     public boolean hasRunnableTasksWithin(int maxIdleMin) {
         if (taskBacklog.isEmpty()) return false;
         long capSec = TimeUnit.MINUTES.toSeconds(maxIdleMin);
@@ -410,13 +428,102 @@ public class TaskQueue {
         if (!statusModel.isIdleTimeExceeded() && statusModel.checkIdleTimeExceeded()) {
             boolean keep = Boolean.TRUE.equals(profile.getConfig(ConfigurationKeyEnum.KEEP_EMULATOR_OPEN_BOOL, Boolean.class));
             if (keep) { emitInfo("Idle exceeded — keeping device open per config"); statusModel.setIdleTimeExceeded(true); return; }
+
+            // Changed by pernerch | Date: 2026-07-02 | Why: keep single-profile-per-emulator
+            // setups on the original idle path; only evaluate handover when siblings exist.
+            if (hasEnabledSiblingOnSameEmulator()) {
+                Optional<PeerSwitchCandidate> peerCandidate = findBestOverduePeerOnSameEmulator();
+                if (peerCandidate.isPresent()) {
+                    handoverSlotToPeer(peerCandidate.get());
+                    statusModel.setIdleTimeExceeded(true);
+                    return;
+                }
+            }
+
             suspendDevice(statusModel.getDelayUntil(), false);
+                    // Changed by pernerch | Date: 2026-07-02 | Why: force immediate activation of the
+                    // selected peer queue after slot handover to eliminate idle dead time.
             statusModel.setIdleTimeExceeded(true);
         } else if (statusModel.isIdleTimeExceeded() && LocalDateTime.now().plusMinutes(1).isAfter(statusModel.getDelayUntil())) {
             emitInfo("Next task approaching — re-acquiring slot"); acquireSlot();
             enqueue(DelayedTaskRegistry.create(TpDailyTaskEnum.INITIALIZE, profile));
             statusModel.setIdleTimeExceeded(false);
         }
+    }
+
+    private Optional<PeerSwitchCandidate> findBestOverduePeerOnSameEmulator() {
+        if (profile == null || profile.getEmulatorNumber() == null || profile.getEmulatorNumber().isBlank()) {
+            return Optional.empty();
+        }
+
+        TaskDispatcher coordinator = ScheduleService.obtain().getCoordinator();
+        if (coordinator == null) {
+            return Optional.empty();
+        }
+
+        return ProfileService.obtain().fetchAllAccounts().stream()
+                .filter(other -> other != null && other.getId() != null && !other.getId().equals(profile.getId()))
+                .filter(other -> Boolean.TRUE.equals(other.getEnabled()))
+                .filter(other -> profile.getEmulatorNumber().equals(other.getEmulatorNumber()))
+                .map(other -> {
+                    TaskQueue q = coordinator.getQueue(other.getId());
+                    if (q == null || !q.isActive()) {
+                        return null;
+                    }
+                    Optional<OverdueRunnableSnapshot> snapshot = q.peekMostRelevantOverdueRunnableTask();
+                    return snapshot.map(value -> new PeerSwitchCandidate(other, q, value)).orElse(null);
+                })
+                .filter(Objects::nonNull)
+                .max(Comparator
+                        .comparingInt((PeerSwitchCandidate c) -> c.overdue().taskPriority())
+                        .thenComparingLong(c -> c.account().getPriority())
+                        .thenComparingLong(c -> c.overdue().overdueSeconds()));
+    }
+
+    private boolean hasEnabledSiblingOnSameEmulator() {
+        // Changed by pernerch | Date: 2026-07-02 | Why: explicit sibling detection guard for
+        // no-impact behavior in single-profile-per-emulator environments.
+        if (profile == null || profile.getEmulatorNumber() == null || profile.getEmulatorNumber().isBlank()) {
+            return false;
+        }
+
+        return ProfileService.obtain().fetchAllAccounts().stream()
+                .filter(other -> other != null && other.getId() != null && !other.getId().equals(profile.getId()))
+                .filter(other -> Boolean.TRUE.equals(other.getEnabled()))
+                .anyMatch(other -> profile.getEmulatorNumber().equals(other.getEmulatorNumber()));
+    }
+
+    private void handoverSlotToPeer(PeerSwitchCandidate candidate) {
+        OverdueRunnableSnapshot overdue = candidate.overdue();
+        emitInfo(String.format(
+                "Idle exceeded — handing emulator slot to profile '%s' (task=%s, taskPriority=%d, profilePriority=%d, overdue=%ds)",
+                candidate.account().getName(),
+                overdue.taskType(),
+                overdue.taskPriority(),
+                candidate.account().getPriority(),
+                overdue.overdueSeconds()));
+
+        try {
+            deviceBridge.releaseEmulatorSlot(profile);
+            sessionOrigin = null;
+        } catch (Exception ex) {
+            emitWarn("Slot handover warning: " + ex.getMessage());
+        }
+
+        candidate.queue().runNow(TpDailyTaskEnum.INITIALIZE, false);
+        candidate.queue().resume();
+    }
+
+    private record PeerSwitchCandidate(AccountDescriptor account,
+                                       TaskQueue queue,
+                                       OverdueRunnableSnapshot overdue) {
+    }
+
+    public record OverdueRunnableSnapshot(String taskName,
+                                          TpDailyTaskEnum taskType,
+                                          int taskPriority,
+                                          long overdueSeconds,
+                                          LocalDateTime scheduledAt) {
     }
 
     private void suspendDevice(LocalDateTime until, boolean freeSlot) {

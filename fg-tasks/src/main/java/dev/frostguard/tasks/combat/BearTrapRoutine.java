@@ -147,6 +147,7 @@ private boolean usePets;
 
 private boolean recallTroops;
 
+// Changed by pernerch | Date: 2026-07-02 | Why: detect shared-emulator profiles to avoid rally contention across accounts.
 private boolean sharedEmulator;
 
 private int trapNumber;
@@ -543,6 +544,7 @@ private void hydrateConfiguration() {
 
         this.joinFlags = decodeJoinFlags();
         this.currentJoinFlagIndex = 0;
+        // Changed by pernerch | Date: 2026-07-02 | Why: resolve shared-emulator state at hydration for deterministic active-phase behavior.
         this.sharedEmulator = isSharedEmulatorProfile();
 
 
@@ -711,6 +713,7 @@ private int inspectFreeMarches() {
     }
 
 private void handleJoinRallies2() {
+		// Changed by pernerch | Date: 2026-07-02 | Why: skip rally joining on shared emulators while keeping other Bear Trap actions active.
         if (!joinRally || sharedEmulator) {
             if (sharedEmulator) {
                 logInfo(routineLogBearTrapLine("Skipping rally joining because this profile shares an emulator with another account."));

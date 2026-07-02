@@ -348,6 +348,64 @@ C:\LDPlayer\LDPlayer9\ldconsole.exe
 
 <br/>
 
+## 🛠️ Fixes
+
+<div align="center">
+  <i>Recent stability and scheduling fixes to improve reliability in real multi-account setups.</i>
+</div>
+
+<br/>
+
+- **Gather queue hard-cap and duplicate prevention**
+  Ensures gather march usage stays within a safe limit and avoids duplicate resource deployments.
+  **Positive effect:** fewer blocked marches, less unnecessary recall/wait behavior, and more predictable gather throughput.
+
+- **Automatic gather overflow correction**
+  Each gather cycle now validates active gather marches against the configured queue size and recalls duplicate marches with the longest return time first when overflow is detected.
+  **Positive effect:** keeps gather state clean over time, prevents hidden queue drift, and guarantees march capacity for priority tasks.
+
+- **Explicit gather recall reason logging**
+  Every automatic gather recall now logs a deterministic reason (`disabled-type`, `duplicate-type`, or `overflow-fallback`) including queue and march type.
+  **Positive effect:** faster troubleshooting and clear proof why a specific gather march was recalled.
+
+- **Gather deferral uses real march return timing**
+  When higher-priority march tasks are pending, gather now checks active marches first and defers using actual return windows.
+  **Positive effect:** avoids noisy rechecks and reduces scheduler churn while preserving event responsiveness.
+
+- **Intel mission-first decision flow**
+  Intel now checks whether missions are actually available before recalling gather marches.
+  **Positive effect:** prevents unnecessary gather disruption when no Intel action is possible.
+
+- **Intel recall returns to world context first**
+  After the mission availability check, Intel now switches back to the world screen before searching and recalling gather marches.
+  **Positive effect:** restores reliable march detection and prevents recall failures caused by staying on the Intel screen.
+
+- **Bear Trap preemption safety gates**
+  Bear Trap preemption now respects feature enablement and includes trigger suppression to prevent rapid repeated interrupts.
+  **Positive effect:** fewer false preemptions and smoother task continuity.
+
+- **Shared-emulator Bear Trap rally handling**
+  Rally-join behavior is skipped for shared-emulator profiles while non-rally Bear Trap actions still execute.
+  **Positive effect:** lower cross-account contention and safer parallel account operation.
+
+- **Character-switch template path correction**
+  Fixed profile-switch template mappings to the correct asset location.
+  **Positive effect:** removes switch button detection failures and improves account-switch reliability.
+
+- **Idle-time emulator slot handover (same emulator only)**
+  On idle breach, the scheduler can hand over to another profile on the same emulator if it has overdue work, with priority-aware selection.
+  **Positive effect:** reduces idle waste and improves execution timeliness for shared-emulator account groups.
+
+- **Single-profile-per-emulator guard**
+  The handover path is explicitly bypassed when no same-emulator sibling profile exists.
+  **Positive effect:** no behavior impact for users running one profile per emulator, including multiple independent emulator instances.
+
+- **Stamina value clamping**
+  Stamina writes and deltas are clamped to valid in-game bounds.
+  **Positive effect:** prevents over-reported stamina from destabilizing combat/intel scheduling decisions.
+
+<br/>
+
 ## 🚀 Roadmap
 
 <div align="center">

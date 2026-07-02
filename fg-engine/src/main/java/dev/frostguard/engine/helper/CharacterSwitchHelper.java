@@ -91,6 +91,7 @@ public class CharacterSwitchHelper {
             log.warn("Confirm failed, canceling");
             cancelSwitch();
         }
+        // Changed by pernerch | Date: 2026-07-02 | Why: close emulator only as final fallback after repeated switch failure.
         log.error("Character not found after 3 passes — closing emulator");
         emu.closeEmulator(dev); return false;
     }
