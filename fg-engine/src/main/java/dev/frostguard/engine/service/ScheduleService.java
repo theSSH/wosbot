@@ -23,6 +23,7 @@ import dev.frostguard.api.configs.TpMessageSeverityEnum;
 import dev.frostguard.api.domain.AccountDescriptor;
 import dev.frostguard.api.domain.BotStateData;
 import dev.frostguard.api.domain.DailyTaskStatusData;
+import dev.frostguard.api.domain.QueueProfileStateData;
 import dev.frostguard.api.domain.QueueStateData;
 import dev.frostguard.api.domain.TaskStateData;
 import dev.frostguard.data.entity.Config;
@@ -138,6 +139,22 @@ public class ScheduleService {
 
 	public void resumeAccountQueue(Long accountId) {
 		changeAccountPause(accountId, false);
+	}
+
+	// Changed by pernerch | Date: 2026-07-02 | Why: allow runtime profile-switch events
+	// to refresh UI context (active profile name + stamina title) immediately.
+	public void notifyActiveProfile(Long accountId) {
+		if (accountId == null) {
+			return;
+		}
+
+		boolean paused = dispatcher.getActiveQueueStates().stream()
+				.filter(state -> state != null && accountId.equals(state.getProfileId()))
+				.findFirst()
+				.map(QueueProfileStateData::isPaused)
+				.orElse(false);
+
+		notifyQueueState(accountId, paused);
 	}
 
 	public void persistDailyCompletion(AccountDescriptor acct, TpDailyTaskEnum taskType, LocalDateTime nextRun) {

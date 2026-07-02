@@ -380,6 +380,10 @@ C:\LDPlayer\LDPlayer9\ldconsole.exe
   After the mission availability check, Intel now switches back to the world screen before searching and recalling gather marches.
   **Positive effect:** restores reliable march detection and prevents recall failures caused by staying on the Intel screen.
 
+- **Full profile context refresh on profile switch**
+  On emulator-local profile handover, the runtime now refreshes active profile context and stamina, and the launcher title is updated to the currently active profile.
+  **Positive effect:** prevents stale account identity in the window header and eliminates carry-over stamina values from the previously active profile.
+
 - **Bear Trap preemption safety gates**
   Bear Trap preemption now respects feature enablement and includes trigger suppression to prevent rapid repeated interrupts.
   **Positive effect:** fewer false preemptions and smoother task continuity.
