@@ -52,8 +52,8 @@ public class ArenaRoutine extends DelayedTask {
     // ========== Arena Coordinates ==========
     // Arena screen
     private static final PointData ARENA_ICON = new PointData(702, 727);
-    private static final PointData ARENA_SCORE_TOP_LEFT = new PointData(567, 1065);
-    private static final PointData ARENA_SCORE_BOTTOM_RIGHT = new PointData(649, 1099);
+    private static final PointData ARENA_SCORE_TOP_LEFT = new PointData(548, 1064);
+    private static final PointData ARENA_SCORE_BOTTOM_RIGHT = new PointData(650, 1100);
 
     // Challenge list
     private static final PointData CHALLENGES_LEFT_TOP_LEFT = new PointData(405, 951);
