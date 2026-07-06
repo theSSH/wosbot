@@ -5,6 +5,7 @@ import dev.frostguard.api.configs.ConfigurationKeyEnum;
 import javafx.fxml.FXML;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.TextField;
 
 public class BeastHuntingLayoutController extends AbstractProfileController {
 
@@ -16,6 +17,9 @@ public class BeastHuntingLayoutController extends AbstractProfileController {
 
     @FXML
     private ComboBox<Integer> comboBoxBeastHuntingLevel;
+
+    @FXML
+    private TextField textFieldBeastStaminaReserve;
 
     @FXML
     private void initialize() {
@@ -32,9 +36,13 @@ public class BeastHuntingLayoutController extends AbstractProfileController {
         }
         comboBoxMappings.put(comboBoxBeastHuntingLevel, ConfigurationKeyEnum.BEAST_HUNTING_LEVEL_INT);
 
+        // Shared stamina reserve kept back for Intel/Rally
+        registerTextField(textFieldBeastStaminaReserve, ConfigurationKeyEnum.STAMINA_RESERVE_INT);
+
         // Disable controls when checkbox is not selected
         comboBoxBeastHuntingMarches.disableProperty().bind(checkBoxEnableBeastHunting.selectedProperty().not());
         comboBoxBeastHuntingLevel.disableProperty().bind(checkBoxEnableBeastHunting.selectedProperty().not());
+        textFieldBeastStaminaReserve.disableProperty().bind(checkBoxEnableBeastHunting.selectedProperty().not());
 
         // Initialize change events (inherited from AbstractProfileController)
         initializeChangeEvents();

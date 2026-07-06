@@ -1,6 +1,7 @@
 package dev.frostguard.tasks.combat;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 import dev.frostguard.api.configs.ConfigurationKeyEnum;
 import dev.frostguard.api.configs.TemplatesEnum;
@@ -8,19 +9,26 @@ import dev.frostguard.api.configs.TpDailyTaskEnum;
 import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.api.domain.PointData;
 import dev.frostguard.api.domain.AccountDescriptor;
+import dev.frostguard.data.entity.DailyTask;
+import dev.frostguard.data.repository.DailyTaskRepository;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
 import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.service.StatisticsService;
+import dev.frostguard.engine.service.TaskManagementService;
 
 public class BeastSlayRoutine extends DelayedTask {
 
-	private static final int MIN_STAMINA = 10;
+	private static final int DEFAULT_STAMINA_RESERVE = 130;
 	private static final int STAMINA_COST_PER_ATTACK = 10;
+
+	private final DailyTaskRepository iDailyTaskRepository = DailyTaskRepository.getRepository();
+	private final TaskManagementService taskManagementService = TaskManagementService.shared();
 
 	private int maxQueues;
 	private int beastLevel;
+	private int staminaReserve;
 
 	/** Tracks the earliest time this task should resume (like GatherRoutine pattern). */
 	private LocalDateTime earliestReschedule;
@@ -43,20 +51,32 @@ public class BeastSlayRoutine extends DelayedTask {
 		this.maxQueues = (configMarches != null) ? configMarches : 3;
 		Integer configLevel = profile.getConfig(ConfigurationKeyEnum.BEAST_HUNTING_LEVEL_INT, Integer.class);
 		this.beastLevel = (configLevel != null) ? configLevel : 30;
+		Integer configReserve = profile.getConfig(ConfigurationKeyEnum.STAMINA_RESERVE_INT, Integer.class);
+		this.staminaReserve = (configReserve != null) ? configReserve : DEFAULT_STAMINA_RESERVE;
+
+		// Yield to Intel if it is about to run, so Beast Hunting never starves it.
+		if (shouldDeferToIntel()) {
+			logInfo("Intel task is scheduled to run soon. Planning next Beast run 5 min later.");
+			reschedule(LocalDateTime.now().plusMinutes(5));
+			return;
+		}
+
+		// Only spend stamina above the reserve, so at least `staminaReserve` stays for Intel/Rally.
+		int minToAct = staminaReserve + STAMINA_COST_PER_ATTACK;
 
 		// Use staminaHelper to check stamina (already read during initialization/validation)
-		if (!staminaHelper.checkStaminaAndMarchesOrReschedule(MIN_STAMINA, MIN_STAMINA, this::reschedule)) {
+		if (!staminaHelper.checkStaminaAndMarchesOrReschedule(minToAct, minToAct, this::reschedule)) {
 			return;
 		}
 
 		int currentStamina = staminaHelper.getCurrentStamina();
-		logInfo("Initiating beast attacks. Stamina: " + currentStamina
+		logInfo("Initiating beast attacks. Stamina: " + currentStamina + ", Reserve: " + staminaReserve
 				+ ", Max queues: " + maxQueues + ", Beast level: " + beastLevel);
 
 		int attacksDone = 0;
 
-		// Fill available queues with beast attacks
-		while (currentStamina >= MIN_STAMINA && attacksDone < maxQueues) {
+		// Fill available queues with beast attacks, never dipping below the reserve
+		while (currentStamina - staminaReserve >= STAMINA_COST_PER_ATTACK && attacksDone < maxQueues) {
 
 			sleepTask(6000);
 			// Open the creature search menu
@@ -161,6 +181,23 @@ public class BeastSlayRoutine extends DelayedTask {
 		tapPoint(beastTab.getPoint());
 		sleepTask(1000);
 		return true;
+	}
+
+	/**
+	 * Mirrors PolarTerrorHuntingRoutine: if Intel is enabled and scheduled to run
+	 * within the next 5 minutes, Beast Hunting defers so it doesn't consume stamina
+	 * Intel is about to need.
+	 */
+	private boolean shouldDeferToIntel() {
+		if (!Boolean.TRUE.equals(profile.getConfig(ConfigurationKeyEnum.INTEL_BOOL, Boolean.class))) {
+			return false;
+		}
+		if (!taskManagementService.lookupTaskState(profile.getId(), TpDailyTaskEnum.INTEL.getId()).isScheduled()) {
+			return false;
+		}
+		DailyTask intel = iDailyTaskRepository.findByAccountIdAndTaskType(profile.getId(), TpDailyTaskEnum.INTEL);
+		return intel != null
+				&& ChronoUnit.MINUTES.between(LocalDateTime.now(), intel.getScheduledAt()) < 5;
 	}
 
 	// ========================================================================

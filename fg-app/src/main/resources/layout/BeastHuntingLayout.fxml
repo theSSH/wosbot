@@ -33,6 +33,14 @@
                             <Label styleClass="task-field-label" text="Beast Level" minWidth="120" />
                             <ComboBox fx:id="comboBoxBeastHuntingLevel" prefWidth="140" />
                         </HBox>
+
+                        <HBox alignment="CENTER_LEFT" spacing="14">
+                            <Label styleClass="task-field-label" text="Stamina Reserve" minWidth="120" />
+                            <TextField fx:id="textFieldBeastStaminaReserve" prefWidth="140" />
+                        </HBox>
+                        <Label styleClass="task-card-note"
+                               text="Stamina kept back for Intel/Rally. Beast Hunting only spends stamina above this value."
+                               wrapText="true" />
                     </VBox>
                 </VBox>
 

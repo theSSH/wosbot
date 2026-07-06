@@ -22,9 +22,13 @@ import java.util.Map;
 
 public class PolarTerrorHuntingRoutine extends DelayedTask {
 
-private final int refreshStaminaLevel = 180;
+private static final int DEFAULT_STAMINA_RESERVE = 130;
 
-private final int minStaminaLevel = 100;
+// Loaded from STAMINA_RESERVE_INT in hydrateConfiguration(): the reserve kept back
+// for Intel/Rally (minStaminaLevel) and the level to regen back up to (refreshStaminaLevel).
+private int refreshStaminaLevel = DEFAULT_STAMINA_RESERVE + 50;
+
+private int minStaminaLevel = DEFAULT_STAMINA_RESERVE;
 
 private final DailyTaskRepository iDailyTaskRepository = DailyTaskRepository.getRepository();
 
@@ -293,6 +297,10 @@ private void hydrateConfiguration() {
         this.limitedHunting = profile.getConfig(ConfigurationKeyEnum.POLAR_TERROR_MODE_STRING, String.class)
                 .equals("Limited (10)");
         this.maxMarches = profile.getConfig(ConfigurationKeyEnum.POLAR_TERROR_MARCHES_INT, Integer.class);
+
+        Integer configReserve = profile.getConfig(ConfigurationKeyEnum.STAMINA_RESERVE_INT, Integer.class);
+        this.minStaminaLevel = (configReserve != null) ? configReserve : DEFAULT_STAMINA_RESERVE;
+        this.refreshStaminaLevel = this.minStaminaLevel + 50;
 
 
         if (this.maxMarches < 1)

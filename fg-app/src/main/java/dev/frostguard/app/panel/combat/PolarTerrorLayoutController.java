@@ -7,6 +7,7 @@ import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.Label;
+import javafx.scene.control.TextField;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 
@@ -24,6 +25,9 @@ public class PolarTerrorLayoutController extends AbstractProfileController {
 
     @FXML
     private ComboBox<Integer> comboBoxPolarTerrorMarches;
+
+    @FXML
+    private TextField textFieldPolarStaminaReserve;
 
     @FXML
     private Label labelPolarTerrorMarch1Flag;
@@ -155,6 +159,9 @@ public class PolarTerrorLayoutController extends AbstractProfileController {
         comboBoxMappings.put(comboBoxPolarTerrorLevel, ConfigurationKeyEnum.POLAR_TERROR_LEVEL_INT);
         comboBoxMappings.put(comboBoxPolarTerrorMode, ConfigurationKeyEnum.POLAR_TERROR_MODE_STRING);
         comboBoxMappings.put(comboBoxPolarTerrorMarches, ConfigurationKeyEnum.POLAR_TERROR_MARCHES_INT);
+
+        // Shared stamina reserve kept back for Intel/Rally (same key as Beast Hunting)
+        registerTextField(textFieldPolarStaminaReserve, ConfigurationKeyEnum.STAMINA_RESERVE_INT);
 
         comboBoxMappings.put(comboBoxPolarTerrorMarch1Flag, ConfigurationKeyEnum.POLAR_TERROR_MARCH_1_FLAG_STRING);
         comboBoxMappings.put(comboBoxPolarTerrorMarch2Flag, ConfigurationKeyEnum.POLAR_TERROR_MARCH_2_FLAG_STRING);

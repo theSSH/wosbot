@@ -37,6 +37,13 @@
                         <Label styleClass="task-field-label" text="Number of Marches" minWidth="140" />
                         <ComboBox fx:id="comboBoxPolarTerrorMarches" prefWidth="150.0" />
                     </HBox>
+                    <HBox alignment="CENTER_LEFT" spacing="14">
+                        <Label styleClass="task-field-label" text="Stamina Reserve" minWidth="140" />
+                        <TextField fx:id="textFieldPolarStaminaReserve" prefWidth="150.0" />
+                    </HBox>
+                    <Label styleClass="task-card-note"
+                           text="Stamina kept back for Intel/Rally. Polar Terror only spends stamina above this value."
+                           wrapText="true" />
 
                     <Separator style="-fx-opacity: 0.25;" />
 
