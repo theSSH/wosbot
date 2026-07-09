@@ -58,7 +58,9 @@ public final class CommonGameAreas {
     // ── rally flag & deployment ──────────────────────────────────────
 
     public static final AreaData FLAG_UNLOCK_TEXT_OCR   = region(297, 126, 424, 168);
-    public static final AreaData TRAVEL_TIME_OCR_AREA   = region(504, 1134, 622, 1162);
+    // Starts right of the clock icon (its right edge sits at x 505-507): a sliver of the dial reads
+    // as a leading "1" and turns "00:00:39" into an unparsable "100:00:39".
+    public static final AreaData TRAVEL_TIME_OCR_AREA   = region(510, 1134, 622, 1162);
 
     // ── character identity ───────────────────────────────────────────
 

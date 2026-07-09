@@ -20,13 +20,9 @@ public final class CommonOCRSettings {
     public static final TesseractSettingsData SPENT_STAMINA_SETTINGS =
             buildSpentStaminaConfig();
 
-    // travel time: "12:34:56" style
+    // travel time: "12:34:56" in white, next to a clock icon that has no white pixel at all
     public static final TesseractSettingsData TRAVEL_TIME_SETTINGS =
-            TesseractSettingsData.builder()
-                    .pageAnalysis(PageAnalysis.SINGLE_LINE)
-                    .recognitionEngine(RecognitionEngine.LSTM_ONLY)
-                    .allowedGlyphs("0123456789:")
-                    .build();
+            buildLstmConfig("0123456789:", true, 255, 255, 255, PageAnalysis.SINGLE_LINE);
 
     // extraction pattern for pulling first integer from noisy OCR text
     public static final Pattern NUMBER_PATTERN = Pattern.compile(".*?(\\d+).*");
