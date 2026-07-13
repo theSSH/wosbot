@@ -4,6 +4,7 @@ import dev.frostguard.api.configs.ConfigurationKeyEnum;
 import dev.frostguard.api.configs.TemplatesEnum;
 import dev.frostguard.api.configs.TpDailyTaskEnum;
 import dev.frostguard.api.domain.AccountDescriptor;
+import dev.frostguard.api.domain.AreaData;
 import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.api.domain.PointData;
 import dev.frostguard.api.domain.RawImageData;
@@ -11,12 +12,19 @@ import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
 import dev.frostguard.engine.schedule.preempt.ManualRallyJoinPreemptionRule;
+import dev.frostguard.vision.color.PixelStats;
 import dev.frostguard.vision.ocr.TesseractOcrProvider;
+import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.time.LocalDateTime;
 import java.util.List;
 
 public class ManualRallyJoinRoutine extends DelayedTask {
+
+// An enabled Join button is green; a disabled one is greyed out.
+private static final Color JOIN_BUTTON_GREEN = new Color(0x25, 0xB7, 0x56);
+private static final int JOIN_BUTTON_GREEN_TOLERANCE = 40;
+private static final int MIN_JOIN_BUTTON_GREEN_PIXELS = 5;
 
 public ManualRallyJoinRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
         super(profile, tpTask);
@@ -233,48 +241,21 @@ private TemplatesEnum resolveTargetTemplateFlow(String key) {
     }
 
 private boolean hasJoinButtonGreen(PointData center) {
-
-
-        final int TARGET_R = 0x25;
-
-        final int TARGET_G = 0xB7;
-
-        final int TARGET_B = 0x56;
-
-        final int TOLERANCE = 40;
-        final int MIN_GREEN_PIXELS = 5;
-
         try {
             RawImageData rawImage = emuManager.captureScreen(EMULATOR_NUMBER);
             BufferedImage img = TesseractOcrProvider.toBufferedImage(rawImage);
 
-            int imgW = img.getWidth();
-            int imgH = img.getHeight();
+            AreaData joinButton = new AreaData(
+                    new PointData(center.getX() - 20, center.getY() - 10),
+                    new PointData(center.getX() + 20, center.getY() + 10));
+            int greenCount = PixelStats.count(img, joinButton,
+                    PixelStats.near(JOIN_BUTTON_GREEN, JOIN_BUTTON_GREEN_TOLERANCE));
 
-
-            int x0 = Math.max(0, center.getX() - 20);
-            int y0 = Math.max(0, center.getY() - 10);
-            int x1 = Math.min(imgW - 1, center.getX() + 20);
-            int y1 = Math.min(imgH - 1, center.getY() + 10);
-
-            int greenCount = 0;
-            for (int y = y0; y <= y1; y++) {
-                for (int x = x0; x <= x1; x++) {
-                    int rgb = img.getRGB(x, y);
-                    int r = (rgb >> 16) & 0xFF;
-                    int g = (rgb >> 8) & 0xFF;
-                    int b = rgb & 0xFF;
-                    if (Math.abs(r - TARGET_R) <= TOLERANCE
-                            && Math.abs(g - TARGET_G) <= TOLERANCE
-                            && Math.abs(b - TARGET_B) <= TOLERANCE) {
-                        greenCount++;
-                        if (greenCount >= MIN_GREEN_PIXELS) {
-                            return true;
-                        }
-                    }
-                }
+            if (greenCount >= MIN_JOIN_BUTTON_GREEN_PIXELS) {
+                return true;
             }
-            logInfo(routineLogManualRallyJoinLine("Green pixel count at join button: " + greenCount + " (needs >= " + MIN_GREEN_PIXELS + ")"));
+            logInfo(routineLogManualRallyJoinLine("Green pixel count at join button: " + greenCount
+                    + " (needs >= " + MIN_JOIN_BUTTON_GREEN_PIXELS + ")"));
             return false;
         } catch (Exception e) {
             logWarning(routineLogManualRallyJoinLine("Color check did not complete for join button at " + center + ": " + e.getMessage()
