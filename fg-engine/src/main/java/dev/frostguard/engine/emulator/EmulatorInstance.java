@@ -247,9 +247,15 @@ public abstract class EmulatorInstance {
             byte[] raw = buf.toByteArray();
             if (raw.length < 12) throw new RuntimeException("screencap too small");
             int w = le32(raw, 0), h = le32(raw, 4), fmt = le32(raw, 8);
-            byte[] px = new byte[raw.length - 12];
-            System.arraycopy(raw, 12, px, 0, px.length);
-            RawImageData frame = RawImageData.capture(px, w, h, fmt == 1 ? 32 : 16);
+            int bitsPerPixel = (fmt == 1) ? 32 : 16;
+            int bytesPerPixel = bitsPerPixel / 8;
+            int headerLength = raw.length - (w * h * bytesPerPixel);
+            if (headerLength < 12 || headerLength > 64) {
+                headerLength = 12;
+            }
+            byte[] px = new byte[raw.length - headerLength];
+            System.arraycopy(raw, headerLength, px, 0, px.length);
+            RawImageData frame = RawImageData.capture(px, w, h, bitsPerPixel);
             lastFrame.put(idx, frame);
             return frame;
         } catch (com.android.ddmlib.TimeoutException e) { throw new RuntimeException("screencap timeout", e); }

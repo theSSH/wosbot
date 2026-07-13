@@ -30,9 +30,9 @@ public final class StaminaService {
 
     private static final Duration TICK_INTERVAL = Duration.ofMinutes(5);
     private static final Duration STALE_THRESHOLD = Duration.ofMinutes(30);
+    // Passive regeneration stops at the normal bar cap. Explicit sources such as items and events
+    // can overfill stamina, so stored values are intentionally not capped at this ceiling.
     private static final int REGEN_CEILING = 200;
-    // Changed by pernerch | Date: 2026-07-02 | Why: cap stored stamina to stop over-reported values from skewing scheduling.
-    private static final int MAX_STAMINA = 200;
 
     /** Compact snapshot of a single account's energy state. */
     private record EnergySlot(int level, Instant lastTouched) {
@@ -99,9 +99,7 @@ public final class StaminaService {
 
     public void setStamina(Long profileId, int stamina) {
         requireId(profileId);
-        // Changed by pernerch | Date: 2026-07-02 | Why: clamp OCR/config writes to valid in-game stamina bounds.
-        int clamped = clampStamina(stamina);
-        EnergySlot fresh = new EnergySlot(clamped, Instant.now());
+        EnergySlot fresh = new EnergySlot(Math.max(0, stamina), Instant.now());
         slots.put(profileId, fresh);
         broadcastChange(profileId, fresh.level());
     }
@@ -138,16 +136,11 @@ public final class StaminaService {
         AtomicInteger result = new AtomicInteger();
         slots.compute(profileId, (id, existing) -> {
             int base = (existing != null) ? existing.level() : 0;
-            int clamped = clampStamina(base + delta);
-            result.set(clamped);
-            return new EnergySlot(clamped, (existing != null) ? existing.lastTouched() : Instant.now());
+            int updated = Math.max(0, base + delta);
+            result.set(updated);
+            return new EnergySlot(updated, (existing != null) ? existing.lastTouched() : Instant.now());
         });
         return result.get();
-    }
-
-    private int clampStamina(int value) {
-        // Changed by pernerch | Date: 2026-07-02 | Why: keep one shared clamp path for consistent set/add/subtract behavior.
-        return Math.max(0, Math.min(MAX_STAMINA, value));
     }
 
     private void runRegenTick() {
