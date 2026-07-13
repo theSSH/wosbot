@@ -48,6 +48,27 @@ public final class CommonGameAreas {
             point(258, 549), point(258, 476), point(258, 403)
     };
 
+    // ── wilderness March Queue rows (index 0 → queue 1, top) ─────────
+    //
+    // Each row carries an activity icon on the left and, below its title, a status line holding
+    // either a word ("Idle"/"Unlock"/"Unavailable") or a countdown. Stationed troops show no status
+    // line at all. The timer window matches the geometry GatherRoutine has been reading for a while.
+
+    private static final int[] MARCH_QUEUE_ROW_Y = { 375, 448, 521, 594, 667, 740 };
+
+    public static final AreaData[] MARCH_QUEUE_STATUS = marchQueueRows(150, 0, 300, 28);
+    public static final AreaData[] MARCH_QUEUE_TIMER  = marchQueueRows(152, 3, 292, 22);
+    // padded past the 46x46 icon so template matching has room to slide
+    public static final AreaData[] MARCH_QUEUE_ICON   = marchQueueRows(18, -27, 72, 27);
+
+    private static AreaData[] marchQueueRows(int x1, int offsetY1, int x2, int offsetY2) {
+        AreaData[] rows = new AreaData[MARCH_QUEUE_ROW_Y.length];
+        for (int i = 0; i < rows.length; i++) {
+            rows[i] = region(x1, MARCH_QUEUE_ROW_Y[i] + offsetY1, x2, MARCH_QUEUE_ROW_Y[i] + offsetY2);
+        }
+        return rows;
+    }
+
     // ── alliance war controls ────────────────────────────────────────
 
     public static final AreaData BOTTOM_MENU_ALLIANCE_BUTTON       = region(493, 1187, 561, 1240);

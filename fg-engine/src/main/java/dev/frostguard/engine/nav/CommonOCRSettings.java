@@ -24,6 +24,10 @@ public final class CommonOCRSettings {
     public static final TesseractSettingsData TRAVEL_TIME_SETTINGS =
             buildLstmConfig("0123456789:", true, 255, 255, 255, PageAnalysis.SINGLE_LINE);
 
+    // march queue countdown: "00:01:53" in white on top of the progress bar
+    public static final TesseractSettingsData MARCH_QUEUE_TIMER_SETTINGS =
+            buildLstmConfig("0123456789:", true, 255, 255, 255, PageAnalysis.SINGLE_LINE);
+
     // extraction pattern for pulling first integer from noisy OCR text
     public static final Pattern NUMBER_PATTERN = Pattern.compile(".*?(\\d+).*");
 

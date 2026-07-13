@@ -129,7 +129,7 @@ public abstract class DelayedTask implements Runnable, Delayed {
         this.templateSearchHelper = new TemplateSearchHelper(emuManager, EMULATOR_NUMBER, profile);
         this.templateSearchHelper.setPreemptionCheck(this::checkPreemption);
         this.navigationHelper = new NavigationHelper(emuManager, EMULATOR_NUMBER, profile);
-        this.marchHelper = new MarchHelper(emuManager, EMULATOR_NUMBER, profile);
+        this.marchHelper = new MarchHelper(emuManager, EMULATOR_NUMBER, stringHelper, profile);
         this.staminaHelper = new StaminaHelper(emuManager, EMULATOR_NUMBER, integerHelper,
                 durationHelper, profile, marchHelper);
         this.intelScreenHelper = new IntelScreenHelper(emuManager, EMULATOR_NUMBER,
