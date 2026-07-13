@@ -17,6 +17,8 @@ import java.util.Map;
 
 public class PolarTerrorLayoutController extends AbstractProfileController {
 
+    private static final int MAX_POLAR_TERROR_LEVEL = 8;
+
     @FXML
     private CheckBox checkBoxEnablePolarTerror;
 
@@ -28,6 +30,15 @@ public class PolarTerrorLayoutController extends AbstractProfileController {
 
     @FXML
     private TextField textFieldPolarStaminaReserve;
+
+    @FXML
+    private CheckBox checkBoxPolarHighestLevel;
+
+    @FXML
+    private CheckBox checkBoxPolarUseStaminaItems;
+
+    @FXML
+    private TextField textFieldPolarStaminaItemReserve;
 
     @FXML
     private Label labelPolarTerrorMarch1Flag;
@@ -121,9 +132,11 @@ public class PolarTerrorLayoutController extends AbstractProfileController {
         // CheckBox mappings
         checkBoxMappings.put(checkBoxEnablePolarTerror, ConfigurationKeyEnum.POLAR_TERROR_ENABLED_BOOL);
         checkBoxMappings.put(checkBoxEnableBerserkCryptid, ConfigurationKeyEnum.RALLY_ENABLED_BOOL);
+        checkBoxMappings.put(checkBoxPolarHighestLevel, ConfigurationKeyEnum.POLAR_TERROR_HIGHEST_LEVEL_BOOL);
+        checkBoxMappings.put(checkBoxPolarUseStaminaItems, ConfigurationKeyEnum.POLAR_TERROR_USE_STAMINA_ITEMS_BOOL);
 
         // Polar Terror combos
-        for (int i = 1; i <= 8; i++) {
+        for (int i = 1; i <= MAX_POLAR_TERROR_LEVEL; i++) {
             comboBoxPolarTerrorLevel.getItems().addAll(i);
         }
         comboBoxPolarTerrorMode.getItems().addAll("Limited (10)", "Unlimited");
@@ -162,6 +175,7 @@ public class PolarTerrorLayoutController extends AbstractProfileController {
 
         // Shared stamina reserve kept back for Intel/Rally (same key as Beast Hunting)
         registerTextField(textFieldPolarStaminaReserve, ConfigurationKeyEnum.STAMINA_RESERVE_INT);
+        registerTextField(textFieldPolarStaminaItemReserve, ConfigurationKeyEnum.POLAR_TERROR_STAMINA_ITEM_RESERVE_INT);
 
         comboBoxMappings.put(comboBoxPolarTerrorMarch1Flag, ConfigurationKeyEnum.POLAR_TERROR_MARCH_1_FLAG_STRING);
         comboBoxMappings.put(comboBoxPolarTerrorMarch2Flag, ConfigurationKeyEnum.POLAR_TERROR_MARCH_2_FLAG_STRING);
@@ -195,6 +209,8 @@ public class PolarTerrorLayoutController extends AbstractProfileController {
         // Initialize visibility
         updateMarchFlagsVisibility(1);
         updatePolarTerrorMarchFlagsVisibility(1);
+        textFieldPolarStaminaItemReserve.disableProperty().bind(checkBoxPolarUseStaminaItems.selectedProperty().not());
+        comboBoxPolarTerrorLevel.disableProperty().bind(checkBoxPolarHighestLevel.selectedProperty());
     }
 
     private void updateMarchFlagsVisibility(Integer marches) {

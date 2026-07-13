@@ -81,6 +81,38 @@ public final class CommonGameAreas {
     // The whole flag tab strip. Slot centres drift a few pixels between profiles, so padlocks are
     // located across the strip and mapped to the nearest slot rather than searched slot by slot.
     public static final AreaData RALLY_FLAG_BAR         = region(0, 88, 700, 158);
+    // Equalize sits in the bottom button bar, but its x shifts once a profile unlocks the Balance
+    // button beside it, so it is matched inside the bar rather than tapped at a fixed point.
+    public static final AreaData RALLY_BOTTOM_BUTTON_BAR      = region(0, 1130, 460, 1279);
+    public static final AreaData RALLY_TROOP_TRAINING_AREA    = region(190, 900, 530, 1060);
+    public static final AreaData RALLY_MARCH_QUEUE_FULL_AREA  = region(220, 300, 500, 380);
+    public static final PointData RALLY_MARCH_QUEUE_FULL_CLOSE = point(640, 338);
+    // Body of the "Other Troops are marching toward the same target" confirmation.
+    public static final AreaData SAME_TARGET_DIALOG_AREA      = region(60, 555, 680, 650);
+
+    // ── Hold-a-rally preparation time ────────────────────────────────
+    //
+    // The dialog keeps whatever preparation time was last picked in game and the bot never sets it,
+    // so the ticked option is read per rally. Only a green tick marks the active option.
+
+    public static final int[] RALLY_SET_TIME_MINUTES = { 3, 5, 10, 15 };
+    public static final AreaData[] RALLY_SET_TIME_CHECKBOXES = {
+            region(110, 592, 152, 634), region(375, 592, 417, 634),
+            region(110, 670, 152, 712), region(375, 670, 417, 712)
+    };
+
+    // Polar Terror search panel: the level number sits in the pill right of the slider, not on the
+    // slider bar itself.
+    public static final AreaData POLAR_LEVEL_DISPLAY = region(565, 1030, 665, 1078);
+
+    // ── stamina "Obtain more" dialog ─────────────────────────────────
+    //
+    // Reachable both from a red deploy cost and straight from the profile stamina bar.
+
+    public static final AreaData STAMINA_DIALOG_CURRENT     = region(340, 248, 470, 292);
+    public static final AreaData STAMINA_DIALOG_ITEM_COUNT  = region(116, 535, 154, 570);
+    public static final AreaData STAMINA_DIALOG_USE_BUTTON  = region(490, 480, 670, 565);
+    public static final PointData STAMINA_DIALOG_CLOSE      = point(665, 135);
     // Starts right of the clock icon (its right edge sits at x 505-507): a sliver of the dial reads
     // as a leading "1" and turns "00:00:39" into an unparsable "100:00:39".
     public static final AreaData TRAVEL_TIME_OCR_AREA   = region(510, 1134, 622, 1162);

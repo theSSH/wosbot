@@ -16,8 +16,10 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 
 // Orchestrates stamina tracking: OCR reads, regen delay computation,
-// availability gating, and travel time parsing.
+// availability gating, item top-ups, and travel time parsing.
 public class StaminaHelper {
+
+    private static final int STAMINA_ITEM_VALUE = 10;
 
     @FunctionalInterface
     public interface RescheduleCallback {
@@ -122,6 +124,106 @@ public class StaminaHelper {
 
         emitDebug(cost != null ? "Deployment cost: " + cost : "Deployment cost OCR failed");
         return cost;
+    }
+
+    // The deploy screen prints the real cost, which stamina-reducing heroes lower below the action's
+    // maximum. An unreadable or out-of-range value falls back to that maximum: over-deducting only
+    // wastes a scheduling cycle, while trusting a too-low misread would over-deploy.
+    // The read only succeeds while the cost is white; a red cost means it is unaffordable anyway.
+    public int readDeployCost(int maxPlausible) {
+        Integer cost = getSpentStamina();
+        if (cost == null || cost < 1 || cost > maxPlausible) {
+            emitWarn("Deploy cost " + (cost == null ? "unreadable" : cost)
+                    + " is out of range [1.." + maxPlausible + "]; assuming " + maxPlausible);
+            return maxPlausible;
+        }
+        return cost;
+    }
+
+    /**
+     * Uses Chief Stamina items until the profile holds at least {@code targetStamina}, opening the
+     * Obtain-more dialog from the profile stamina bar. Anything unexpected leaves the dialog and
+     * reports failure, so the caller can fall back to waiting for regeneration.
+     *
+     * @param itemReserve number of items never to spend
+     */
+    public boolean topUpFromProfile(int targetStamina, int itemReserve) {
+        device.touchArea(deviceSlot, CommonGameAreas.PROFILE_AVATAR.topLeft(),
+                CommonGameAreas.PROFILE_AVATAR.bottomRight(), 1, 200);
+        pause(800);
+        device.touchArea(deviceSlot, CommonGameAreas.STAMINA_BUTTON.topLeft(),
+                CommonGameAreas.STAMINA_BUTTON.bottomRight(), 1, 200);
+        pause(1000);
+
+        boolean toppedUp = useItemsInOpenDialog(targetStamina, itemReserve);
+        device.pressBack(deviceSlot);
+        pause(500);
+        device.pressBack(deviceSlot);
+        pause(500);
+        return toppedUp;
+    }
+
+    /** Same, but for the dialog the game opens itself when a red deploy cost is pressed. */
+    public boolean refillFromOpenDialog(int targetStamina, int itemReserve) {
+        boolean toppedUp = useItemsInOpenDialog(targetStamina, itemReserve);
+        emitInfo("Closing obtain-more dialog");
+        device.touchPoint(deviceSlot, CommonGameAreas.STAMINA_DIALOG_CLOSE);
+        pause(800);
+        return toppedUp;
+    }
+
+    private boolean useItemsInOpenDialog(int targetStamina, int itemReserve) {
+        var useButton = device.locatePattern(deviceSlot, dev.frostguard.api.configs.TemplatesEnum.STAMINA_ITEM_USE_BUTTON,
+                CommonGameAreas.STAMINA_DIALOG_USE_BUTTON.topLeft(),
+                CommonGameAreas.STAMINA_DIALOG_USE_BUTTON.bottomRight(), 85);
+        if (!useButton.isFound()) {
+            emitWarn("Chief Stamina Use button not found in the obtain-more dialog");
+            return false;
+        }
+
+        Integer current = readDialogNumber(CommonGameAreas.STAMINA_DIALOG_CURRENT,
+                CommonOCRSettings.STAMINA_FRACTION_SETTINGS, "current stamina");
+        Integer itemCount = readDialogNumber(CommonGameAreas.STAMINA_DIALOG_ITEM_COUNT,
+                CommonOCRSettings.SPENT_STAMINA_SETTINGS, "chief stamina item count");
+        if (current == null || itemCount == null) {
+            emitWarn("Could not read stamina or item count from the obtain-more dialog");
+            return false;
+        }
+
+        int deficit = targetStamina - current;
+        if (deficit <= 0) return true;
+
+        int itemsNeeded = (deficit + STAMINA_ITEM_VALUE - 1) / STAMINA_ITEM_VALUE;
+        int usableItems = Math.max(0, itemCount - itemReserve);
+        emitInfo("Stamina top-up: current=" + current + " target=" + targetStamina
+                + " itemCount=" + itemCount + " reserve=" + itemReserve + " needed=" + itemsNeeded);
+
+        if (usableItems < itemsNeeded) {
+            emitWarn("Need " + itemsNeeded + " Chief Stamina item(s), only " + usableItems
+                    + " usable after reserve " + itemReserve);
+            return false;
+        }
+
+        for (int used = 0; used < itemsNeeded; used++) {
+            device.touchPoint(deviceSlot, useButton.getPoint());
+            pause(600);
+        }
+        addStamina(itemsNeeded * STAMINA_ITEM_VALUE);
+        return true;
+    }
+
+    private Integer readDialogNumber(dev.frostguard.api.domain.AreaData area,
+                                     dev.frostguard.api.domain.TesseractSettingsData settings, String label) {
+        Integer value = numberReader.attemptRecognition(area.topLeft(), area.bottomRight(), 3, 100L, settings,
+                txt -> RegexNumberParser.conformsTo(txt, CommonOCRSettings.NUMBER_PATTERN),
+                txt -> RegexNumberParser.extractByPattern(txt, CommonOCRSettings.NUMBER_PATTERN));
+        emitInfo("Obtain-more dialog: " + label + " = " + (value == null ? "unreadable" : value));
+        return value;
+    }
+
+    private void pause(long ms) {
+        try { Thread.sleep(ms); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 
     public void subtractStamina(Integer spent, boolean rally) {

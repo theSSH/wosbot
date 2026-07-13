@@ -3,7 +3,7 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 
-<!-- Polar Terror — StackPane root with VBox form rows replacing GridPane -->
+<!-- Rally — Polar Terror Hunting and Manual Rally Join split into their own tabs -->
 <StackPane maxHeight="Infinity" maxWidth="Infinity"
            HBox.hgrow="ALWAYS" VBox.vgrow="ALWAYS"
            xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1">
@@ -12,136 +12,163 @@
                 styleClass="task-page-scroll">
         <VBox spacing="14" styleClass="task-page-root" maxWidth="Infinity">
 
-            <!-- Polar Terror Hunting -->
-            <VBox styleClass="content-card">
+            <VBox maxWidth="Infinity" styleClass="content-card">
                 <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-red">
-                    <CheckBox fx:id="checkBoxEnablePolarTerror" mnemonicParsing="false"
-                              style="-fx-font-weight: bold;" text="Enable Polar Terror Hunting" />
+                    <Label style="-fx-font-weight: bold; -fx-text-fill: -fg-bg-app; -fx-font-size: 13px;"
+                           text="Rally" />
                 </HBox>
-                <VBox spacing="10" styleClass="task-section-inner">
-                    <Label styleClass="task-card-description"
-                           text="Automates hunting of polar terror creatures with selected settings"
-                           wrapText="true" />
-                    <Separator style="-fx-opacity: 0.25;" />
 
-                    <!-- Settings as individual rows instead of GridPane -->
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label styleClass="task-field-label" text="Operation Mode" minWidth="140" />
-                        <ComboBox fx:id="comboBoxPolarTerrorMode" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label styleClass="task-field-label" text="Level" minWidth="140" />
-                        <ComboBox fx:id="comboBoxPolarTerrorLevel" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label styleClass="task-field-label" text="Number of Marches" minWidth="140" />
-                        <ComboBox fx:id="comboBoxPolarTerrorMarches" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label styleClass="task-field-label" text="Stamina Reserve" minWidth="140" />
-                        <TextField fx:id="textFieldPolarStaminaReserve" prefWidth="150.0" />
-                    </HBox>
-                    <Label styleClass="task-card-note"
-                           text="Stamina kept back for Intel/Rally. Polar Terror only spends stamina above this value."
-                           wrapText="true" />
+                <TabPane maxWidth="Infinity" styleClass="horizontal-tab-pane" tabClosingPolicy="UNAVAILABLE">
 
-                    <Separator style="-fx-opacity: 0.25;" />
+                    <Tab text="Polar Terror">
+                        <VBox maxWidth="Infinity" spacing="10" styleClass="task-section-inner">
+                            <HBox alignment="CENTER_LEFT" maxWidth="Infinity">
+                                <CheckBox fx:id="checkBoxEnablePolarTerror" mnemonicParsing="false"
+                                          style="-fx-font-weight: bold;" text="Enable Polar Terror Hunting" />
+                            </HBox>
+                            <Label styleClass="task-card-description"
+                                   text="Automates hunting of polar terror creatures with selected settings"
+                                   wrapText="true" />
+                            <Separator style="-fx-opacity: 0.25;" />
 
-                    <!-- March flags -->
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label fx:id="labelPolarTerrorMarch1Flag" styleClass="task-field-label"
-                               text="March 1 Flag" minWidth="140" />
-                        <ComboBox fx:id="comboBoxPolarTerrorMarch1Flag" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label fx:id="labelPolarTerrorMarch2Flag" styleClass="task-field-label"
-                               text="March 2 Flag" minWidth="140" />
-                        <ComboBox fx:id="comboBoxPolarTerrorMarch2Flag" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label fx:id="labelPolarTerrorMarch3Flag" styleClass="task-field-label"
-                               text="March 3 Flag" minWidth="140" />
-                        <ComboBox fx:id="comboBoxPolarTerrorMarch3Flag" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label fx:id="labelPolarTerrorMarch4Flag" styleClass="task-field-label"
-                               text="March 4 Flag" minWidth="140" />
-                        <ComboBox fx:id="comboBoxPolarTerrorMarch4Flag" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label fx:id="labelPolarTerrorMarch5Flag" styleClass="task-field-label"
-                               text="March 5 Flag" minWidth="140" />
-                        <ComboBox fx:id="comboBoxPolarTerrorMarch5Flag" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label fx:id="labelPolarTerrorMarch6Flag" styleClass="task-field-label"
-                               text="March 6 Flag" minWidth="140" />
-                        <ComboBox fx:id="comboBoxPolarTerrorMarch6Flag" prefWidth="150.0" />
-                    </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label styleClass="task-field-label" text="Operation Mode" minWidth="140" />
+                                <ComboBox fx:id="comboBoxPolarTerrorMode" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label styleClass="task-field-label" text="Level" minWidth="140" />
+                                <ComboBox fx:id="comboBoxPolarTerrorLevel" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label styleClass="task-field-label" text="" minWidth="140" />
+                                <CheckBox fx:id="checkBoxPolarHighestLevel" mnemonicParsing="false"
+                                          text="Always use the highest available level" />
+                            </HBox>
+                            <Label styleClass="task-card-note"
+                                   text="The bot drives the level selector to its ceiling, so a newly unlocked polar level needs no config change."
+                                   wrapText="true" />
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label styleClass="task-field-label" text="Number of Marches" minWidth="140" />
+                                <ComboBox fx:id="comboBoxPolarTerrorMarches" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label styleClass="task-field-label" text="Stamina Reserve" minWidth="140" />
+                                <TextField fx:id="textFieldPolarStaminaReserve" prefWidth="150.0" />
+                            </HBox>
+                            <Label styleClass="task-card-note"
+                                   text="Stamina kept back for Intel/Rally. A rally never pushes stamina below this value; with stamina items enabled the shortfall is topped up instead of waited out."
+                                   wrapText="true" />
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label styleClass="task-field-label" text="Stamina Items" minWidth="140" />
+                                <CheckBox fx:id="checkBoxPolarUseStaminaItems" mnemonicParsing="false"
+                                          text="Use stamina items when needed" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label styleClass="task-field-label" text="Item Reserve" minWidth="140" />
+                                <TextField fx:id="textFieldPolarStaminaItemReserve" prefWidth="150.0" />
+                            </HBox>
+                            <Label styleClass="task-card-note"
+                                   text="Keeps this many 10-stamina items in reserve before using any for Polar Terror."
+                                   wrapText="true" />
 
-                    <Label styleClass="task-card-note"
-                           text="Note: When using a flag or when limited mode is active, rallies will be called one by one."
-                           wrapText="true" />
-                </VBox>
-            </VBox>
+                            <Separator style="-fx-opacity: 0.25;" />
 
-            <!-- Manual Rally Join (Preemptive) -->
-            <VBox styleClass="content-card">
-                <HBox alignment="CENTER_LEFT" maxWidth="Infinity" styleClass="header-orange">
-                    <CheckBox fx:id="checkBoxEnableBerserkCryptid" mnemonicParsing="false"
-                              style="-fx-font-weight: bold;" text="Manual Rally Join (Preemptive)" />
-                </HBox>
-                <VBox spacing="10" styleClass="task-section-inner">
-                    <Label styleClass="task-card-description"
-                           text="Automates joining of rallies with selected settings" wrapText="true" />
-                    <Separator style="-fx-opacity: 0.25;" />
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label fx:id="labelPolarTerrorMarch1Flag" styleClass="task-field-label"
+                                       text="March 1 Flag" minWidth="140" />
+                                <ComboBox fx:id="comboBoxPolarTerrorMarch1Flag" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label fx:id="labelPolarTerrorMarch2Flag" styleClass="task-field-label"
+                                       text="March 2 Flag" minWidth="140" />
+                                <ComboBox fx:id="comboBoxPolarTerrorMarch2Flag" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label fx:id="labelPolarTerrorMarch3Flag" styleClass="task-field-label"
+                                       text="March 3 Flag" minWidth="140" />
+                                <ComboBox fx:id="comboBoxPolarTerrorMarch3Flag" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label fx:id="labelPolarTerrorMarch4Flag" styleClass="task-field-label"
+                                       text="March 4 Flag" minWidth="140" />
+                                <ComboBox fx:id="comboBoxPolarTerrorMarch4Flag" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label fx:id="labelPolarTerrorMarch5Flag" styleClass="task-field-label"
+                                       text="March 5 Flag" minWidth="140" />
+                                <ComboBox fx:id="comboBoxPolarTerrorMarch5Flag" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label fx:id="labelPolarTerrorMarch6Flag" styleClass="task-field-label"
+                                       text="March 6 Flag" minWidth="140" />
+                                <ComboBox fx:id="comboBoxPolarTerrorMarch6Flag" prefWidth="150.0" />
+                            </HBox>
 
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label styleClass="task-field-label" text="Operation Mode" minWidth="140" />
-                        <ComboBox fx:id="comboBoxBerserkCryptidMode" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label styleClass="task-field-label" text="Number of Marches" minWidth="140" />
-                        <ComboBox fx:id="comboBoxBerserkCryptidMarches" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label styleClass="task-field-label" text="Target" minWidth="140" />
-                        <ComboBox fx:id="comboBoxRallyTarget" prefWidth="150.0" />
-                    </HBox>
+                            <Label styleClass="task-card-note"
+                                   text="Note: When using a flag or when limited mode is active, rallies will be called one by one."
+                                   wrapText="true" />
+                        </VBox>
+                    </Tab>
 
-                    <Separator style="-fx-opacity: 0.25;" />
+                    <Tab text="Manual Rally Join">
+                        <VBox maxWidth="Infinity" spacing="10" styleClass="task-section-inner">
+                            <HBox alignment="CENTER_LEFT" maxWidth="Infinity">
+                                <CheckBox fx:id="checkBoxEnableBerserkCryptid" mnemonicParsing="false"
+                                          style="-fx-font-weight: bold;" text="Manual Rally Join (Preemptive)" />
+                            </HBox>
+                            <Label styleClass="task-card-description"
+                                   text="Automates joining of rallies with selected settings" wrapText="true" />
+                            <Separator style="-fx-opacity: 0.25;" />
 
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label fx:id="labelBerserkCryptidMarch1Flag" styleClass="task-field-label"
-                               text="March 1 Flag" minWidth="140" />
-                        <ComboBox fx:id="comboBoxBerserkCryptidMarch1Flag" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label fx:id="labelBerserkCryptidMarch2Flag" styleClass="task-field-label"
-                               text="March 2 Flag" minWidth="140" />
-                        <ComboBox fx:id="comboBoxBerserkCryptidMarch2Flag" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label fx:id="labelBerserkCryptidMarch3Flag" styleClass="task-field-label"
-                               text="March 3 Flag" minWidth="140" />
-                        <ComboBox fx:id="comboBoxBerserkCryptidMarch3Flag" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label fx:id="labelBerserkCryptidMarch4Flag" styleClass="task-field-label"
-                               text="March 4 Flag" minWidth="140" />
-                        <ComboBox fx:id="comboBoxBerserkCryptidMarch4Flag" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label fx:id="labelBerserkCryptidMarch5Flag" styleClass="task-field-label"
-                               text="March 5 Flag" minWidth="140" />
-                        <ComboBox fx:id="comboBoxBerserkCryptidMarch5Flag" prefWidth="150.0" />
-                    </HBox>
-                    <HBox alignment="CENTER_LEFT" spacing="14">
-                        <Label fx:id="labelBerserkCryptidMarch6Flag" styleClass="task-field-label"
-                               text="March 6 Flag" minWidth="140" />
-                        <ComboBox fx:id="comboBoxBerserkCryptidMarch6Flag" prefWidth="150.0" />
-                    </HBox>
-                </VBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label styleClass="task-field-label" text="Operation Mode" minWidth="140" />
+                                <ComboBox fx:id="comboBoxBerserkCryptidMode" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label styleClass="task-field-label" text="Number of Marches" minWidth="140" />
+                                <ComboBox fx:id="comboBoxBerserkCryptidMarches" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label styleClass="task-field-label" text="Target" minWidth="140" />
+                                <ComboBox fx:id="comboBoxRallyTarget" prefWidth="150.0" />
+                            </HBox>
+
+                            <Separator style="-fx-opacity: 0.25;" />
+
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label fx:id="labelBerserkCryptidMarch1Flag" styleClass="task-field-label"
+                                       text="March 1 Flag" minWidth="140" />
+                                <ComboBox fx:id="comboBoxBerserkCryptidMarch1Flag" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label fx:id="labelBerserkCryptidMarch2Flag" styleClass="task-field-label"
+                                       text="March 2 Flag" minWidth="140" />
+                                <ComboBox fx:id="comboBoxBerserkCryptidMarch2Flag" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label fx:id="labelBerserkCryptidMarch3Flag" styleClass="task-field-label"
+                                       text="March 3 Flag" minWidth="140" />
+                                <ComboBox fx:id="comboBoxBerserkCryptidMarch3Flag" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label fx:id="labelBerserkCryptidMarch4Flag" styleClass="task-field-label"
+                                       text="March 4 Flag" minWidth="140" />
+                                <ComboBox fx:id="comboBoxBerserkCryptidMarch4Flag" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label fx:id="labelBerserkCryptidMarch5Flag" styleClass="task-field-label"
+                                       text="March 5 Flag" minWidth="140" />
+                                <ComboBox fx:id="comboBoxBerserkCryptidMarch5Flag" prefWidth="150.0" />
+                            </HBox>
+                            <HBox alignment="CENTER_LEFT" spacing="14">
+                                <Label fx:id="labelBerserkCryptidMarch6Flag" styleClass="task-field-label"
+                                       text="March 6 Flag" minWidth="140" />
+                                <ComboBox fx:id="comboBoxBerserkCryptidMarch6Flag" prefWidth="150.0" />
+                            </HBox>
+                        </VBox>
+                    </Tab>
+
+                </TabPane>
             </VBox>
 
         </VBox>

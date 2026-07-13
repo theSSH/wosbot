@@ -28,6 +28,15 @@ public final class CommonOCRSettings {
     public static final TesseractSettingsData MARCH_QUEUE_TIMER_SETTINGS =
             buildLstmConfig("0123456789:", true, 255, 255, 255, PageAnalysis.SINGLE_LINE);
 
+    // polar terror level: dark slate digits inside a pale pill
+    public static final TesseractSettingsData POLAR_LEVEL_SETTINGS =
+            TesseractSettingsData.assembler()
+                    .charWhitelist("0123456789")
+                    .pageAnalysis(PageAnalysis.SINGLE_LINE)
+                    .stripBackground(true)
+                    .setTextColor(new Color(66, 84, 108))
+                    .build();
+
     // extraction pattern for pulling first integer from noisy OCR text
     public static final Pattern NUMBER_PATTERN = Pattern.compile(".*?(\\d+).*");
 
