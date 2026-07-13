@@ -1,6 +1,5 @@
 package dev.frostguard.engine.emulator;
 
-import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,7 +9,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.*;
 
 import dev.frostguard.vision.match.OpenCvPatternLocator;
-import dev.frostguard.vision.ocr.TesseractOcrProvider;
 import dev.frostguard.api.configs.*;
 import dev.frostguard.engine.emulator.instance.*;
 import dev.frostguard.api.domain.*;
@@ -250,24 +248,6 @@ public class EmulatorController {
             if (s != null) return cn;
         } catch (Exception ignored) {}
         return path;
-    }
-
-    // --- colour analysis ---
-
-    public int[] analyzeRegionColors(String idx, PointData tl, PointData br, int step) {
-        try {
-            BufferedImage img = TesseractOcrProvider.toBufferedImage(backend.captureScreenshot(idx));
-            int[] buckets = new int[3]; // 0=blueGrey, 1=green, 2=red
-            for (int y = tl.getY(); y <= br.getY(); y += step)
-                for (int x = tl.getX(); x <= br.getX(); x += step) {
-                    int rgb = img.getRGB(x, y);
-                    int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
-                    if (Math.abs(r-127)<20 && Math.abs(g-173)<20 && Math.abs(b-205)<20) buckets[0]++;
-                    else if (g > Math.max(r,b)*1.2 && g > 100) buckets[1]++;
-                    else if (r > Math.max(g,b)*1.2 && r > 100) buckets[2]++;
-                }
-            return buckets;
-        } catch (Exception e) { LOG.error("Colour analysis failed", e); return new int[]{0,0,0}; }
     }
 
     // --- slot management ---

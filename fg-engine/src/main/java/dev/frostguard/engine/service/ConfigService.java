@@ -108,6 +108,9 @@ public class ConfigService {
 
 		LinkedHashMap<String, String> present = Optional.ofNullable(loadGlobalSettings()).orElseGet(LinkedHashMap::new);
 		for (ConfigurationKeyEnum key : ConfigurationKeyEnum.values()) {
+			if (key.isLegacyOnly()) {
+				continue;
+			}
 			if (key.getDefaultValue() != null && !present.containsKey(key.name())) {
 				Config row = bareRow(key.name(), key.getDefaultValue(), globalTemplate);
 				if (configStore.addSetting(row)) {

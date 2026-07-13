@@ -1,7 +1,9 @@
 package dev.frostguard.app.panel.city;
 
 import dev.frostguard.api.configs.ConfigurationKeyEnum;
+import dev.frostguard.app.panel.profile.ProfileAux;
 import dev.frostguard.app.shared.AbstractProfileController;
+import javafx.beans.binding.Bindings;
 import javafx.fxml.FXML;
 import javafx.scene.Node;
 import javafx.scene.control.CheckBox;
@@ -20,6 +22,18 @@ import java.util.Locale;
 public class CityEventsExtraLayoutController extends AbstractProfileController {
 
     private static final List<Integer> EXTRA_ATTEMPT_OPTIONS = List.of(0, 1, 2, 3, 4, 5);
+    private static final List<String> SERVER_POLICY_OPTIONS = List.of(
+        "Any server",
+        "Prefer profile server",
+        "Avoid profile server",
+        "Never attack profile server"
+    );
+    private static final List<String> ALLIANCE_POLICY_OPTIONS = List.of(
+        "Any alliance",
+        "Avoid profile alliance",
+        "Never attack profile alliance"
+    );
+    private static final String PROFILE_VALUE_NOT_SET = "Not set";
 
     @FXML
     private CheckBox checkBoxDailyVipRewards;
@@ -42,9 +56,17 @@ public class CityEventsExtraLayoutController extends AbstractProfileController {
     @FXML
     private TextField textFieldArenaActivationHour;
     @FXML
-    private TextField textFieldArenaPlayerState;
+    private Label labelArenaProfileAlliance;
+    @FXML
+    private Label labelArenaProfileServer;
+    @FXML
+    private Label labelArenaTargetingHint;
     @FXML
     private ComboBox<Integer> comboBoxArenaExtraAttempts;
+    @FXML
+    private ComboBox<String> comboBoxArenaAlliancePolicy;
+    @FXML
+    private ComboBox<String> comboBoxArenaServerPolicy;
     @FXML
     private Label labelDateTimeError;
 
@@ -53,7 +75,11 @@ public class CityEventsExtraLayoutController extends AbstractProfileController {
         cityRoutineToggles().forEach(toggle -> checkBoxMappings.put(toggle.control(), toggle.configKey()));
         arenaTextFields().forEach(field -> textFieldMappings.put(field.control(), field.configKey()));
         comboBoxArenaExtraAttempts.getItems().setAll(EXTRA_ATTEMPT_OPTIONS);
+        comboBoxArenaAlliancePolicy.getItems().setAll(ALLIANCE_POLICY_OPTIONS);
+        comboBoxArenaServerPolicy.getItems().setAll(SERVER_POLICY_OPTIONS);
         comboBoxMappings.put(comboBoxArenaExtraAttempts, ConfigurationKeyEnum.ARENA_TASK_EXTRA_ATTEMPTS_INT);
+        comboBoxMappings.put(comboBoxArenaAlliancePolicy, ConfigurationKeyEnum.ARENA_TASK_ALLIANCE_POLICY_STRING);
+        comboBoxMappings.put(comboBoxArenaServerPolicy, ConfigurationKeyEnum.ARENA_TASK_SERVER_POLICY_STRING);
 
         new ArenaSection().install();
         new ArenaTimeField().install();
@@ -76,13 +102,50 @@ public class CityEventsExtraLayoutController extends AbstractProfileController {
 
     private List<TextBinding> arenaTextFields() {
         return List.of(
-            new TextBinding(textFieldArenaActivationHour, ConfigurationKeyEnum.ARENA_TASK_ACTIVATION_TIME_STRING),
-            new TextBinding(textFieldArenaPlayerState, ConfigurationKeyEnum.ARENA_TASK_PLAYER_STATE_INT)
+            new TextBinding(textFieldArenaActivationHour, ConfigurationKeyEnum.ARENA_TASK_ACTIVATION_TIME_STRING)
         );
     }
 
     private void disableWhenArenaOff(Node node) {
         node.disableProperty().bind(checkBoxArena.selectedProperty().not());
+    }
+
+    @Override
+    public void onProfileLoad(ProfileAux profile) {
+        super.onProfileLoad(profile);
+        isLoadingProfile = true;
+        try {
+            String alliance = normalizeProfileValue(profile.getCharacterAllianceCode());
+            String server = normalizeProfileValue(profile.getCharacterServer());
+            labelArenaProfileAlliance.setText(alliance);
+            labelArenaProfileServer.setText(server);
+            if (PROFILE_VALUE_NOT_SET.equals(alliance)) {
+                comboBoxArenaAlliancePolicy.setValue("Any alliance");
+            }
+            if (PROFILE_VALUE_NOT_SET.equals(server)) {
+                comboBoxArenaServerPolicy.setValue("Any server");
+            }
+            labelArenaTargetingHint.setText(buildArenaTargetingHint(alliance, server));
+        } finally {
+            isLoadingProfile = false;
+        }
+    }
+
+    private String normalizeProfileValue(String value) {
+        return value == null || value.isBlank() ? PROFILE_VALUE_NOT_SET : value.trim();
+    }
+
+    private String buildArenaTargetingHint(String alliance, String server) {
+        if (!PROFILE_VALUE_NOT_SET.equals(alliance) && !PROFILE_VALUE_NOT_SET.equals(server)) {
+            return "Target filters use the selected profile's Character Information: Alliance and Server.";
+        }
+        if (PROFILE_VALUE_NOT_SET.equals(alliance) && PROFILE_VALUE_NOT_SET.equals(server)) {
+            return "Set Alliance and Server in Profile > Character Information to enable target filters.";
+        }
+        if (PROFILE_VALUE_NOT_SET.equals(alliance)) {
+            return "Set Alliance in Profile > Character Information to protect alliance members.";
+        }
+        return "Set Server in Profile > Character Information to enable server preferences.";
     }
 
     private record ToggleBinding(CheckBox control, ConfigurationKeyEnum configKey) {
@@ -93,8 +156,20 @@ public class CityEventsExtraLayoutController extends AbstractProfileController {
 
     private final class ArenaSection {
         private void install() {
-            List.of(checkBoxArenaRefreshWithGems, textFieldArenaActivationHour, textFieldArenaPlayerState, comboBoxArenaExtraAttempts)
+            List.of(checkBoxArenaRefreshWithGems, textFieldArenaActivationHour, comboBoxArenaExtraAttempts)
                 .forEach(CityEventsExtraLayoutController.this::disableWhenArenaOff);
+            comboBoxArenaAlliancePolicy.disableProperty().bind(
+                checkBoxArena.selectedProperty().not()
+                    .or(Bindings.createBooleanBinding(
+                        () -> PROFILE_VALUE_NOT_SET.equals(labelArenaProfileAlliance.getText()),
+                        labelArenaProfileAlliance.textProperty())));
+            comboBoxArenaServerPolicy.disableProperty().bind(
+                checkBoxArena.selectedProperty().not()
+                    .or(Bindings.createBooleanBinding(
+                        () -> PROFILE_VALUE_NOT_SET.equals(labelArenaProfileServer.getText()),
+                        labelArenaProfileServer.textProperty())));
+            comboBoxArenaAlliancePolicy.setTooltip(new Tooltip("Set Alliance in Profile > Character Information to enable alliance preferences."));
+            comboBoxArenaServerPolicy.setTooltip(new Tooltip("Set Server in Profile > Character Information to enable server preferences."));
         }
     }
 

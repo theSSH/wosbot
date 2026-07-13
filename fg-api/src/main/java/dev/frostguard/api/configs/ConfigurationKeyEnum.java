@@ -96,7 +96,12 @@ public enum ConfigurationKeyEnum {
     ARENA_TASK_ACTIVATION_TIME_STRING   ("23:50",   String.class,   ConfigCategory.DAILIES),
     ARENA_TASK_BOOL                     ("false",   Boolean.class,  ConfigCategory.DAILIES),
     ARENA_TASK_EXTRA_ATTEMPTS_INT       ("0",       Integer.class,  ConfigCategory.DAILIES),
-    ARENA_TASK_PLAYER_STATE_INT         ("0",       Integer.class,  ConfigCategory.DAILIES),
+    /** Legacy arena state filter key retained only so existing persisted profiles can still be read. */
+    ARENA_TASK_PLAYER_STATE_INT         ("0",       Integer.class,  ConfigCategory.DAILIES, true),
+    ARENA_TASK_SERVER_POLICY_STRING     ("Any server", String.class, ConfigCategory.DAILIES),
+    ARENA_TASK_ALLIANCE_POLICY_STRING   ("Avoid profile alliance", String.class, ConfigCategory.DAILIES),
+    /** Legacy arena alliance protection key retained only so existing persisted profiles can still be read. */
+    ARENA_TASK_PROTECT_ALLIANCE_BOOL    ("true",    Boolean.class,  ConfigCategory.DAILIES, true),
     ARENA_TASK_REFRESH_WITH_GEMS_BOOL   ("false",   Boolean.class,  ConfigCategory.DAILIES),
     DAILY_LABYRINTH_BOOL                ("false",   Boolean.class,  ConfigCategory.DAILIES),
     DAILY_MISSION_AUTO_SCHEDULE_BOOL    ("false",   Boolean.class,  ConfigCategory.DAILIES),
@@ -356,12 +361,19 @@ public enum ConfigurationKeyEnum {
     private final String initialValue;
     private final Class<?> valueKind;
     private final ConfigCategory category;
+    private final boolean legacyOnly;
 
     ConfigurationKeyEnum(String initialValue, Class<?> valueKind,
                          ConfigCategory category) {
+        this(initialValue, valueKind, category, false);
+    }
+
+    ConfigurationKeyEnum(String initialValue, Class<?> valueKind,
+                         ConfigCategory category, boolean legacyOnly) {
         this.initialValue = initialValue;
         this.valueKind    = valueKind;
         this.category     = category;
+        this.legacyOnly   = legacyOnly;
     }
 
     /* ---- primary accessors ---- */
@@ -374,6 +386,9 @@ public enum ConfigurationKeyEnum {
 
     /** Which operator-panel group this key belongs to. */
     public ConfigCategory category() { return category; }
+
+    /** Whether this key is retained only for reading existing persisted configs. */
+    public boolean isLegacyOnly() { return legacyOnly; }
 
     /* ---- convenience queries ---- */
 
@@ -455,7 +470,7 @@ public enum ConfigurationKeyEnum {
         EnumSet<ConfigurationKeyEnum> accumulator =
                 EnumSet.noneOf(ConfigurationKeyEnum.class);
         for (ConfigurationKeyEnum entry : values()) {
-            if (entry.category == cat) {
+            if (!entry.legacyOnly && entry.category == cat) {
                 accumulator.add(entry);
             }
         }
@@ -471,7 +486,7 @@ public enum ConfigurationKeyEnum {
     public static int countByCategory(ConfigCategory cat) {
         int count = 0;
         for (ConfigurationKeyEnum entry : values()) {
-            if (entry.category == cat) {
+            if (!entry.legacyOnly && entry.category == cat) {
                 count++;
             }
         }

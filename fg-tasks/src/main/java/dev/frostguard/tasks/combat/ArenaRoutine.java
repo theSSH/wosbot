@@ -1,89 +1,103 @@
 package dev.frostguard.tasks.combat;
 
+import java.awt.Color;
+import java.awt.image.BufferedImage;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
-import java.awt.Color;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.function.IntPredicate;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
-import dev.frostguard.vision.convert.GameTimeUtils;
 import dev.frostguard.api.configs.ConfigurationKeyEnum;
 import dev.frostguard.api.configs.TemplatesEnum;
 import dev.frostguard.api.configs.TpDailyTaskEnum;
+import dev.frostguard.api.domain.AccountDescriptor;
+import dev.frostguard.api.domain.AreaData;
+import dev.frostguard.api.domain.ConfigData;
 import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.api.domain.PointData;
-import dev.frostguard.api.domain.AccountDescriptor;
+import dev.frostguard.api.domain.RawImageData;
 import dev.frostguard.api.domain.TesseractSettingsData;
-import dev.frostguard.engine.service.StatisticsService;
+import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
-import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
+import dev.frostguard.engine.service.StatisticsService;
+import dev.frostguard.vision.color.GameColors;
+import dev.frostguard.vision.color.PixelStats;
+import dev.frostguard.vision.convert.GameTimeUtils;
+import dev.frostguard.vision.ocr.TesseractOcrProvider;
 
 /**
  * Task responsible for managing arena challenges.
- * 
- * <p>
- * This task:
- * <ul>
- * <li>Navigates to the arena via the Marksman Camp</li>
- * <li>Checks available challenge attempts</li>
- * <li>Optionally purchases extra attempts with gems</li>
- * <li>Challenges opponents with lower power (detected via text color)</li>
- * <li>Refreshes opponent list (free or with gems)</li>
- * <li>Runs at a configured activation time in UTC</li>
- * </ul>
- * 
- * <p>
- * <b>Power Comparison Strategy:</b>
- * Uses color detection on opponent power text instead of OCR:
- * <ul>
- * <li>Green text = opponent has lower power (challenge them)</li>
- * <li>Red text = opponent has higher power (skip them)</li>
- * </ul>
+ *
+ * <p>The routine only attacks weaker opponents. Optional profile-based filters
+ * protect the profile alliance and apply a server preference using the
+ * Character Information stored on the selected profile.</p>
  */
-
 public class ArenaRoutine extends DelayedTask {
 
-    // ========== Configuration Keys ==========
+    // ========== Configuration Defaults ==========
     private static final String DEFAULT_ACTIVATION_TIME = "23:55"; // UTC
     private static final int DEFAULT_EXTRA_ATTEMPTS = 0;
     private static final boolean DEFAULT_REFRESH_WITH_GEMS = false;
-    private static final int DEFAULT_PLAYER_STATE = 0;
+    private static final AlliancePolicy DEFAULT_ALLIANCE_POLICY = AlliancePolicy.AVOID_PROFILE_ALLIANCE;
 
     // ========== Arena Coordinates ==========
-    // Arena screen
     private static final PointData ARENA_ICON = new PointData(702, 727);
     private static final PointData ARENA_SCORE_TOP_LEFT = new PointData(548, 1064);
     private static final PointData ARENA_SCORE_BOTTOM_RIGHT = new PointData(650, 1100);
 
-    // Challenge list
-    private static final PointData CHALLENGES_LEFT_TOP_LEFT = new PointData(405, 951);
-    private static final PointData CHALLENGES_LEFT_BOTTOM_RIGHT = new PointData(455, 986);
+    private static final PointData CHALLENGES_LEFT_TOP_LEFT = new PointData(405, 948);
+    private static final PointData CHALLENGES_LEFT_BOTTOM_RIGHT = new PointData(438, 994);
     private static final PointData EXTRA_ATTEMPTS_BUTTON = new PointData(467, 965);
-    private static final PointData OPPONENT_STATE_TOP_LEFT = new PointData(181, 378);
-    private static final PointData OPPONENT_STATE_BOTTOM_RIGHT = new PointData(271, 413);
 
-    // Opponent list (Y coordinates for 5 opponents)
     private static final int OPPONENT_BASE_Y_FIRST_RUN = 380;
     private static final int OPPONENT_BASE_Y_NORMAL = 376;
     private static final int OPPONENT_Y_SPACING = 128;
     private static final int OPPONENT_CHALLENGE_BUTTON_X = 624;
+    private static final int OPPONENT_CHALLENGE_BUTTON_HALF_WIDTH = 38;
+    private static final int OPPONENT_CHALLENGE_BUTTON_HALF_HEIGHT = 38;
 
-    // Power text color detection area (relative to opponent Y)
-    private static final int POWER_TEXT_RELATIVE_X = 185;
-    private static final int POWER_TEXT_WIDTH = 30; // 185 to 215
-    private static final int POWER_TEXT_HEIGHT = 14;
+    private static final int OPPONENT_NAME_X = 150;
+    private static final int OPPONENT_NAME_WIDTH = 260;
+    private static final int OPPONENT_NAME_RELATIVE_Y = -70;
+    private static final int OPPONENT_NAME_HEIGHT = 32;
 
-    // Battle controls
+    private static final int OPPONENT_SERVER_X = 145;
+    private static final int OPPONENT_SERVER_WIDTH = 140;
+    private static final int OPPONENT_SERVER_RELATIVE_Y = 12;
+    private static final int OPPONENT_SERVER_HEIGHT = 30;
+
+    private static final int POWER_TEXT_RELATIVE_X = 180;
+    private static final int POWER_TEXT_WIDTH = 130;
+    private static final int POWER_TEXT_HEIGHT = 22;
+    private static final int POWER_TEXT_SERVER_LAYOUT_Y_OFFSET = -35;
+    private static final int POWER_TEXT_COMPACT_LAYOUT_Y_OFFSET = 0;
+    private static final Color ARENA_POWER_GREEN_TEXT = new Color(105, 230, 50);
+
+    private static final int OPPONENT_SCORE_STAR_X = 296;
+    private static final int OPPONENT_SCORE_STAR_WIDTH = 42;
+    private static final int OPPONENT_SCORE_STAR_HEIGHT = 34;
+    private static final int OPPONENT_SCORE_STAR_SERVER_LAYOUT_Y_OFFSET = -34;
+    private static final int OPPONENT_SCORE_STAR_COMPACT_LAYOUT_Y_OFFSET = -4;
+    private static final int MIN_STAR_YELLOW_PIXELS = 20;
+
     private static final PointData QUICK_DEPLOY_BUTTON = new PointData(180, 1200);
     private static final PointData BATTLE_START_BUTTON = new PointData(530, 1200);
     private static final PointData BATTLE_PAUSE_BUTTON = new PointData(60, 962);
     private static final PointData BATTLE_RETREAT_BUTTON = new PointData(252, 635);
 
-    // Battle result OCR regions
-    private static final PointData VICTORY_TEXT_TOP_LEFT = new PointData(174, 387);
-    private static final PointData VICTORY_TEXT_BOTTOM_RIGHT = new PointData(538, 503);
+    private static final AreaData BATTLE_RESULT_AREA = new AreaData(
+            new PointData(150, 350),
+            new PointData(570, 520));
 
-    // Extra attempts purchase
     private static final PointData PURCHASE_PRICE_TOP_LEFT = new PointData(328, 840);
     private static final PointData PURCHASE_PRICE_BOTTOM_RIGHT = new PointData(433, 883);
     private static final PointData PURCHASE_COUNTER_SWIPE_START = new PointData(420, 733);
@@ -91,82 +105,132 @@ public class ArenaRoutine extends DelayedTask {
     private static final PointData PURCHASE_CONFIRM_BUTTON = new PointData(360, 860);
     private static final PointData PURCHASE_COUNTER_INCREMENT_TOP_LEFT = new PointData(457, 713);
     private static final PointData PURCHASE_COUNTER_INCREMENT_BOTTOM_RIGHT = new PointData(499, 752);
-    private static final PointData REFRESH_CONFIRM_BUTTON = new PointData(210, 712);
 
     // ========== Arena Constants ==========
     private static final int INITIAL_ARENA_SCORE = 1000;
+    private static final int MAX_REASONABLE_CHALLENGE_ATTEMPTS = 10;
+    private static final int MAX_FREE_REFRESHES = 3;
     private static final int MAX_GEM_REFRESHES = 5;
     private static final int[] ATTEMPT_PRICES = { 100, 200, 400, 600, 800 };
     private static final int MIN_COLORED_PIXELS_THRESHOLD = 10;
     private static final double GREEN_DOMINANCE_RATIO = 1.5;
+    private static final double RED_DOMINANCE_RATIO = 1.5;
     private static final int COLOR_ANALYSIS_STEP_SIZE = 2;
     private static final int MAX_OPPONENTS = 5;
+    private static final Pattern ALLIANCE_TAG_PATTERN = Pattern.compile("\\[([A-Za-z0-9]{1,4})]");
+    private static final Pattern MALFORMED_ALLIANCE_TAG_PATTERN = Pattern.compile("\\[([A-Za-z0-9]{1,4})");
+    private static final Pattern BRACKETLESS_ALLIANCE_TAG_PATTERN = Pattern.compile("^[\\[\\|Il1t]([A-Z0-9]{2,4})(?=[a-z\\]|Il1~\\-])");
+    private static final Pattern BRACKETLESS_TRAILING_BRACKET_PATTERN = Pattern.compile("^[\\[\\|Il1t]?([A-Z0-9]{2,4})[^\\]]*]");
+    private static final Pattern SERVER_PATTERN = Pattern.compile("(\\d{3,5})");
+    private static final Pattern POWER_VALUE_PATTERN = Pattern.compile("([0-9]+(?:[.,][0-9]+)?)([KMBkmb]?)");
+    private static final int OCR_RETRY_DELAY_MS = 250;
 
-    // ========== Configuration (loaded in loadConfiguration()) ==========
+    // ========== Configuration ==========
     private String activationTime;
     private int extraAttempts;
     private boolean refreshWithGems;
-    private int playerState;
+    private AlliancePolicy alliancePolicy;
+    private ServerPolicy serverPolicy;
+    private String profileAllianceTag;
+    private String profileServer;
 
-    // ========== Execution State (reset each execution) ==========
+    // ========== Execution State ==========
     private int attempts;
     private boolean firstRun;
+    private int freeRefreshCount;
     private int gemRefreshCount;
-    private int currentOpponentPosition;
+    private boolean extraAttemptsPurchased;
+    private boolean noDailyChallengesDetected;
+    private final Set<Integer> attemptedOpponentSlots = new HashSet<>();
 
     public ArenaRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
         super(profile, tpTask);
     }
 
-    /**
-     * ArenaRoutine navigates into arena menus and runs battles.
-     * Injections are suppressed to prevent shortcut taps or back-presses from
-     * disrupting the battle sequence or arena navigation state.
-     *
-     * @return {@code false} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â injections are suppressed for the entire task
-     *         duration
-     */
     @Override
     protected boolean acceptsInjections() {
         return false;
     }
 
-    /**
-     * Loads task configuration from profile.
-     * Must be called at the start of execute() after profile refresh.
-     */
     private void loadConfiguration() {
         String configuredTime = profile.getConfig(
                 ConfigurationKeyEnum.ARENA_TASK_ACTIVATION_TIME_STRING, String.class);
-        this.activationTime = (configuredTime != null) ? configuredTime : DEFAULT_ACTIVATION_TIME;
+        this.activationTime = configuredTime != null ? configuredTime : DEFAULT_ACTIVATION_TIME;
 
         Integer configuredAttempts = profile.getConfig(
                 ConfigurationKeyEnum.ARENA_TASK_EXTRA_ATTEMPTS_INT, Integer.class);
-        this.extraAttempts = (configuredAttempts != null) ? configuredAttempts : DEFAULT_EXTRA_ATTEMPTS;
+        this.extraAttempts = configuredAttempts != null ? configuredAttempts : DEFAULT_EXTRA_ATTEMPTS;
 
         Boolean configuredRefresh = profile.getConfig(
                 ConfigurationKeyEnum.ARENA_TASK_REFRESH_WITH_GEMS_BOOL, Boolean.class);
-        this.refreshWithGems = (configuredRefresh != null) ? configuredRefresh : DEFAULT_REFRESH_WITH_GEMS;
+        this.refreshWithGems = configuredRefresh != null ? configuredRefresh : DEFAULT_REFRESH_WITH_GEMS;
 
-        Integer playerState = profile.getConfig(
-                ConfigurationKeyEnum.ARENA_TASK_PLAYER_STATE_INT, Integer.class);
-        this.playerState = (playerState != null) ? playerState : DEFAULT_PLAYER_STATE;
+        this.alliancePolicy = resolveAlliancePolicy();
+
+        String configuredServerPolicy = profile.getConfig(
+                ConfigurationKeyEnum.ARENA_TASK_SERVER_POLICY_STRING, String.class);
+        this.serverPolicy = ServerPolicy.fromConfig(configuredServerPolicy);
+
+        this.profileAllianceTag = normalizeAllianceTag(profile.getCharacterAllianceCode());
+        this.profileServer = normalizeServer(profile.getCharacterServer());
+
+        if (profileAllianceTag == null && alliancePolicy != AlliancePolicy.ANY) {
+            logWarning("Arena alliance policy requires profile Alliance, but it is not set. Using Any alliance.");
+            alliancePolicy = AlliancePolicy.ANY;
+        }
+        if (profileServer == null && serverPolicy != ServerPolicy.ANY) {
+            logWarning("Arena server policy requires profile Server, but it is not set. Using Any server.");
+            serverPolicy = ServerPolicy.ANY;
+        }
 
         logDebug(String.format(
-                "Configuration loaded - Time: %s, Extra attempts: %d, Refresh with gems: %s, Player state: %d",
-                activationTime, extraAttempts, refreshWithGems, playerState));
+                "Configuration loaded - Time: %s, Extra attempts: %d, Refresh list with gems: %s, Alliance policy: %s, Profile alliance: %s, Server policy: %s, Profile server: %s",
+                activationTime, extraAttempts, refreshWithGems, alliancePolicy.displayName,
+                profileAllianceTag != null ? profileAllianceTag : "not set",
+                serverPolicy.displayName,
+                profileServer != null ? profileServer : "not set"));
     }
 
-    /**
-     * Resets execution-specific state variables.
-     * Must be called at the start of each execute() run.
-     */
     private void resetExecutionState() {
         this.attempts = 0;
         this.firstRun = false;
+        this.freeRefreshCount = 0;
         this.gemRefreshCount = 0;
-        this.currentOpponentPosition = 0;
+        this.extraAttemptsPurchased = false;
+        this.noDailyChallengesDetected = false;
+        this.attemptedOpponentSlots.clear();
         logDebug("Execution state reset");
+    }
+
+    private boolean hasConfig(ConfigurationKeyEnum key) {
+        return profile.getEntries().stream()
+                .map(ConfigData::getSettingKey)
+                .anyMatch(settingKey -> key.equals(settingKey) || key.name().equalsIgnoreCase(String.valueOf(settingKey)));
+    }
+
+    private AlliancePolicy resolveAlliancePolicy() {
+        boolean hasPolicyConfig = hasConfig(ConfigurationKeyEnum.ARENA_TASK_ALLIANCE_POLICY_STRING);
+        boolean hasLegacyConfig = hasConfig(ConfigurationKeyEnum.ARENA_TASK_PROTECT_ALLIANCE_BOOL);
+        String configuredPolicy = hasPolicyConfig
+                ? profile.getConfig(ConfigurationKeyEnum.ARENA_TASK_ALLIANCE_POLICY_STRING, String.class)
+                : null;
+
+        if (hasLegacyConfig) {
+            Boolean legacyProtectAlliance = profile.getConfig(
+                    ConfigurationKeyEnum.ARENA_TASK_PROTECT_ALLIANCE_BOOL, Boolean.class);
+            if (Boolean.FALSE.equals(legacyProtectAlliance) && AlliancePolicy.isDefaultConfig(configuredPolicy)) {
+                return AlliancePolicy.ANY;
+            }
+            if (!hasPolicyConfig) {
+                return legacyProtectAlliance == null || legacyProtectAlliance
+                        ? DEFAULT_ALLIANCE_POLICY
+                        : AlliancePolicy.ANY;
+            }
+        }
+
+        return hasPolicyConfig
+                ? AlliancePolicy.fromConfig(configuredPolicy)
+                : DEFAULT_ALLIANCE_POLICY;
     }
 
     @Override
@@ -174,7 +238,6 @@ public class ArenaRoutine extends DelayedTask {
         loadConfiguration();
         resetExecutionState();
 
-        // Validate activation time format
         if (!isValidTimeFormat(activationTime)) {
             logWarning("Invalid activation time format: " + activationTime +
                     ". Scheduling to 5 min before reset.");
@@ -182,9 +245,8 @@ public class ArenaRoutine extends DelayedTask {
             return;
         }
 
-        // Validate timing window
         if (!isWithinExecutionWindow()) {
-            return; // Reschedule handled inside validation
+            return;
         }
 
         if (!navigateToArena()) {
@@ -207,22 +269,14 @@ public class ArenaRoutine extends DelayedTask {
             return;
         }
 
-        purchaseExtraAttemptsIfConfigured();
-
         processChallenges();
 
         rescheduleWithActivationHour();
     }
 
-    /**
-     * Validates if the current time is within the configured execution window.
-     * Window runs from activation time until 23:55 UTC.
-     * 
-     * @return true if within window, false otherwise (task will be rescheduled)
-     */
     private boolean isWithinExecutionWindow() {
         if (!isValidTimeFormat(activationTime)) {
-            return true; // No timing restriction if format is invalid
+            return true;
         }
 
         ZonedDateTime nowUtc = ZonedDateTime.now(ZoneId.of("UTC"));
@@ -238,16 +292,14 @@ public class ArenaRoutine extends DelayedTask {
                 .atZone(ZoneId.of("UTC"));
 
         if (nowUtc.isBefore(scheduledTimeUtc)) {
-            logDebug(String.format("Task triggered too early (current: %s UTC, scheduled: %s UTC). " +
-                    "Rescheduling for scheduled time.",
+            logDebug(String.format("Task triggered too early (current: %s UTC, scheduled: %s UTC). Rescheduling for scheduled time.",
                     nowUtc.format(DateTimeFormatter.ofPattern("HH:mm")), activationTime));
             rescheduleForToday();
             return false;
         }
 
         if (nowUtc.isAfter(cutoffTimeUtc)) {
-            logDebug(String.format("Task triggered too late (current: %s UTC, cutoff: 23:55 UTC). " +
-                    "Scheduling for tomorrow.",
+            logDebug(String.format("Task triggered too late (current: %s UTC, cutoff: 23:55 UTC). Scheduling for tomorrow.",
                     nowUtc.format(DateTimeFormatter.ofPattern("HH:mm"))));
             rescheduleWithActivationHour();
             return false;
@@ -258,22 +310,7 @@ public class ArenaRoutine extends DelayedTask {
         return true;
     }
 
-    /**
-     * Navigates to the arena screen via Marksman Camp.
-     * 
-     * <p>
-     * Navigation flow:
-     * <ol>
-     * <li>Opens event list from left sidebar</li>
-     * <li>Selects event category</li>
-     * <li>Finds and taps Marksman Camp shortcut</li>
-     * <li>Taps arena icon to enter</li>
-     * </ol>
-     * 
-     * @return true if navigation succeeded, false otherwise
-     */
     private boolean navigateToArena() {
-        // Open left menu on city section
         marchHelper.openLeftMenuCitySection(true);
 
         logInfo("Searching for Marksman Camp shortcut");
@@ -287,21 +324,15 @@ public class ArenaRoutine extends DelayedTask {
         }
 
         tapPoint(marksmanResult.getPoint());
-        sleepTask(1000); // Wait for Marksman Camp to load
+        sleepTask(1000);
 
         logInfo("Entering arena");
         tapPoint(ARENA_ICON);
-        sleepTask(1000); // Wait for arena screen to load
+        sleepTask(1000);
 
         return true;
     }
 
-    /**
-     * Detects if this is the first arena run by checking if score is 1000.
-     * First runs have different opponent list positioning.
-     * 
-     * @return true if first run detected, false otherwise
-     */
     private boolean detectFirstRun() {
         logDebug("Checking if this is first arena run");
 
@@ -322,7 +353,7 @@ public class ArenaRoutine extends DelayedTask {
         }
 
         logInfo("Arena score: " + arenaScore);
-        boolean isFirstRun = (arenaScore == INITIAL_ARENA_SCORE);
+        boolean isFirstRun = arenaScore == INITIAL_ARENA_SCORE;
 
         if (isFirstRun) {
             logInfo("First run detected (score = 1000)");
@@ -331,11 +362,6 @@ public class ArenaRoutine extends DelayedTask {
         return isFirstRun;
     }
 
-    /**
-     * Opens the challenge list by tapping the Challenge button.
-     * 
-     * @return true if challenge list opened completed successfullyfully, false otherwise
-     */
     private boolean openChallengeList() {
         logDebug("Opening challenge list");
 
@@ -349,21 +375,17 @@ public class ArenaRoutine extends DelayedTask {
         }
 
         tapPoint(challengeResult.getPoint());
-        sleepTask(1000); // Wait for challenge list to load
+        sleepTask(1000);
 
         return true;
     }
 
-    /**
-     * Reads the initial number of available challenge attempts via OCR.
-     * 
-     * @return true if attempts were completed successfullyfully read, false otherwise
-     */
     private boolean readInitialAttempts() {
         logDebug("Reading initial challenge attempts");
 
-        // First attempt: Strict color matching (optimized for standard blue-grey text)
         TesseractSettingsData strictSettings = TesseractSettingsData.assembler()
+                .pageAnalysis(TesseractSettingsData.PageAnalysis.SINGLE_LINE)
+                .recognitionEngine(TesseractSettingsData.RecognitionEngine.LSTM_ONLY)
                 .stripBackground(true)
                 .setTextColor(new Color(91, 112, 147))
                 .charWhitelist("0123456789")
@@ -374,12 +396,12 @@ public class ArenaRoutine extends DelayedTask {
                 CHALLENGES_LEFT_BOTTOM_RIGHT,
                 strictSettings);
 
-        // Second attempt: Relaxed configMap (no color filter) if strict was unsuccessful
-        // This handles cases like number "7" where color detection might fail
         if (attemptsRead == null) {
-            logWarning("Strict OCR was unsuccessful for attempts count. Retrying with relaxed configMap...");
+            logDebug("Attempt count strict OCR did not produce a value. Retrying with relaxed settings.");
 
             TesseractSettingsData relaxedSettings = TesseractSettingsData.assembler()
+                    .pageAnalysis(TesseractSettingsData.PageAnalysis.SINGLE_LINE)
+                    .recognitionEngine(TesseractSettingsData.RecognitionEngine.LSTM_ONLY)
                     .stripBackground(true)
                     .charWhitelist("0123456789")
                     .build();
@@ -391,8 +413,15 @@ public class ArenaRoutine extends DelayedTask {
         }
 
         if (attemptsRead == null) {
-            logWarning(
-                    "Failed to read initial attempts via OCR (both strict and relaxed attempts was unsuccessful). Defaulting to 5.");
+            logWarning("Attempt count OCR failed. Assuming 5 attempts and checking each challenge button before attacking.");
+            this.attempts = 5;
+            return true;
+        }
+
+        if (attemptsRead < 0 || attemptsRead > MAX_REASONABLE_CHALLENGE_ATTEMPTS) {
+            logWarning(String.format(
+                    "Attempt count OCR produced implausible value %d. Assuming 5 attempts and checking each challenge button before attacking.",
+                    attemptsRead));
             this.attempts = 5;
             return true;
         }
@@ -402,46 +431,650 @@ public class ArenaRoutine extends DelayedTask {
         return true;
     }
 
-    /**
-     * Purchases extra attempts if configured to do so.
-     * Updates the attempts counter with the number of attempts bought.
-     */
-    private void purchaseExtraAttemptsIfConfigured() {
-        if (extraAttempts <= 0) {
-            logDebug("No extra attempts configured to purchase");
-            return;
+    private void processChallenges() {
+        logInfo(String.format("Processing %d challenge attempts", attempts));
+
+        while (true) {
+            while (attempts > 0) {
+                OpponentCandidate opponent = findEligibleOpponent();
+                if (opponent != null) {
+                    ChallengeOutcome outcome = challengeOpponent(opponent);
+                    if (outcome == ChallengeOutcome.NO_ATTEMPTS) {
+                        break;
+                    }
+                    if (outcome == ChallengeOutcome.DEFEAT) {
+                        logInfo(String.format(
+                                "Opponent %d was defeated by our attack. Refreshing list before using another attempt.",
+                                opponent.number()));
+                        if (tryRefreshOpponentList()) {
+                            logInfo("List refreshed after defeat. Rescanning opponents.");
+                            continue;
+                        }
+                        logInfo(String.format(
+                                "No list refresh available after defeat. Continuing current list with tried opponent %d excluded. Attempts unused: %d",
+                                opponent.number(),
+                                attempts));
+                        continue;
+                    }
+                    continue;
+                }
+
+                if (tryRefreshOpponentList()) {
+                    logInfo("List refreshed. Rescanning opponents.");
+                    continue;
+                }
+
+                logInfo(String.format("No eligible arena opponents after refresh checks. Stopping with %d attempts unused.", attempts));
+                return;
+            }
+
+            if (extraAttemptsPurchased || extraAttempts <= 0) {
+                break;
+            }
+
+            extraAttemptsPurchased = true;
+            OpponentCandidate availableTarget = findEligibleOpponent();
+            if (availableTarget == null) {
+                logInfo("Extra attempts configured, but no eligible target is visible. Skipping extra attempt purchase.");
+                break;
+            }
+
+            int attemptsBought = buyExtraAttempts();
+            if (attemptsBought <= 0) {
+                break;
+            }
+
+            attempts += attemptsBought;
+            logInfo(String.format("Purchased %d extra attempts after confirming an eligible target. Total attempts: %d",
+                    attemptsBought, attempts));
         }
 
-        logInfo("Extra attempts configured: " + extraAttempts);
-        int attemptsBought = buyExtraAttempts();
-
-        if (attemptsBought > 0) {
-            attempts += attemptsBought;
-            logInfo(String.format("Purchased %d extra attempts. Total attempts: %d",
-                    attemptsBought, attempts));
+        if (noDailyChallengesDetected && extraAttempts <= 0) {
+            logInfo("No daily arena challenges are available and extra attempts are disabled.");
+        } else {
+            logInfo("Arena run finished after using available eligible attempts.");
         }
     }
 
-    /**
-     * Purchases extra arena attempts using gems.
-     * 
-     * <p>
-     * Purchase flow:
-     * <ol>
-     * <li>Opens purchase dialog via "+" button</li>
-     * <li>Resets counter to zero via swipe</li>
-     * <li>Reads current price to determine position in sequence</li>
-     * <li>Calculates how many more attempts to buy</li>
-     * <li>Increments counter and confirms purchase</li>
-     * </ol>
-     * 
-     * @return number of attempts completed successfullyfully purchased (0 if was unsuccessful or none
-     *         available)
-     */
+    private OpponentCandidate findEligibleOpponent() {
+        List<OpponentCandidate> opponents = scanOpponents();
+        List<OpponentCandidate> eligible = opponents.stream()
+                .filter(OpponentCandidate::eligible)
+                .filter(candidate -> !attemptedOpponentSlots.contains(candidate.number()))
+                .sorted(alliancePolicy.comparator(profileAllianceTag)
+                        .thenComparing(serverPolicy.comparator(profileServer))
+                        .thenComparing(OpponentCandidate::hasPowerValue, Comparator.reverseOrder())
+                        .thenComparingDouble(OpponentCandidate::powerSortValue)
+                        .thenComparingInt(OpponentCandidate::number))
+                .toList();
+
+        if (eligible.isEmpty()) {
+            long alreadyTried = opponents.stream()
+                    .filter(OpponentCandidate::eligible)
+                    .filter(candidate -> attemptedOpponentSlots.contains(candidate.number()))
+                    .count();
+            if (alreadyTried > 0) {
+                logInfo(String.format(
+                        "No eligible opponent found in current arena list. %d eligible opponent(s) were already tried in this list.",
+                        alreadyTried));
+            } else {
+                logInfo("No eligible opponent found in current arena list.");
+            }
+            return null;
+        }
+
+        OpponentCandidate selected = eligible.get(0);
+        logInfo(String.format("Selected opponent %d (%s)", selected.number(), selected.selectionSummary()));
+        return selected;
+    }
+
+    private List<OpponentCandidate> scanOpponents() {
+        int baseY = firstRun ? OPPONENT_BASE_Y_FIRST_RUN : OPPONENT_BASE_Y_NORMAL;
+        List<OpponentCandidate> opponents = new ArrayList<>(MAX_OPPONENTS);
+
+        for (int i = 0; i < MAX_OPPONENTS; i++) {
+            int opponentY = baseY + (i * OPPONENT_Y_SPACING);
+            int opponentNumber = i + 1;
+            OpponentLayout layout = detectOpponentLayout(opponentY, opponentNumber);
+            PowerRead power = readPower(opponentY, opponentNumber, layout);
+            AllianceRead alliance = AllianceRead.notChecked();
+            ServerRead server = ServerRead.notChecked();
+            if (power.relation() == PowerRelation.WEAKER) {
+                if (alliancePolicy != AlliancePolicy.ANY && profileAllianceTag != null) {
+                    alliance = readAllianceTag(opponentY, opponentNumber);
+                }
+                if (serverPolicy != ServerPolicy.ANY && profileServer != null) {
+                    server = readServer(opponentY, opponentNumber, layout);
+                }
+            }
+            OpponentCandidate candidate = classifyOpponent(opponentNumber, opponentY, power, alliance, server);
+            opponents.add(candidate);
+            logInfo(String.format("Opponent %d scan: layout=%s power=%s alliance=%s server=%s decision=%s",
+                    opponentNumber, layout.label, power.logValue(), alliance.logValue(), server.logValue(), candidate.decision()));
+            sleepTask(150);
+        }
+
+        return opponents;
+    }
+
+    private OpponentCandidate classifyOpponent(int number, int opponentY, PowerRead power,
+                                               AllianceRead alliance, ServerRead server) {
+        if (power.relation() != PowerRelation.WEAKER) {
+            return OpponentCandidate.skipped(number, opponentY, power, alliance, server, power.relation().skipReason);
+        }
+
+        if (alliancePolicy == AlliancePolicy.NEVER_PROFILE_ALLIANCE && profileAllianceTag != null) {
+            if (alliance.status == AllianceStatus.UNREADABLE) {
+                return OpponentCandidate.skipped(number, opponentY, power, alliance, server, "alliance unreadable");
+            }
+            if (profileAllianceTag.equals(alliance.tag)) {
+                return OpponentCandidate.skipped(number, opponentY, power, alliance, server, "profile alliance");
+            }
+        }
+
+        if (serverPolicy == ServerPolicy.NEVER_PROFILE_SERVER && profileServer != null) {
+            if (server.status != ServerStatus.READ) {
+                return OpponentCandidate.skipped(number, opponentY, power, alliance, server, "server not visible/readable");
+            }
+            if (profileServer.equals(server.value)) {
+                return OpponentCandidate.skipped(number, opponentY, power, alliance, server, "profile server");
+            }
+        }
+
+        return OpponentCandidate.eligible(number, opponentY, power, alliance, server);
+    }
+
+    private OpponentLayout detectOpponentLayout(int opponentY, int opponentNumber) {
+        int serverStarTopY = opponentY + OPPONENT_SCORE_STAR_SERVER_LAYOUT_Y_OFFSET;
+        int compactStarTopY = opponentY + OPPONENT_SCORE_STAR_COMPACT_LAYOUT_Y_OFFSET;
+        BufferedImage image = captureFrameForPixelScan("arena layout probe");
+        if (image == null) {
+            logWarning(String.format("Opponent %d layout probe failed; assuming server layout.", opponentNumber));
+            return OpponentLayout.UNKNOWN;
+        }
+
+        int serverLayoutYellow = countPixels(
+                image,
+                new PointData(OPPONENT_SCORE_STAR_X, serverStarTopY),
+                new PointData(
+                        OPPONENT_SCORE_STAR_X + OPPONENT_SCORE_STAR_WIDTH,
+                        serverStarTopY + OPPONENT_SCORE_STAR_HEIGHT),
+                GameColors::isArenaStarYellow);
+        int compactLayoutYellow = countPixels(
+                image,
+                new PointData(OPPONENT_SCORE_STAR_X, compactStarTopY),
+                new PointData(
+                        OPPONENT_SCORE_STAR_X + OPPONENT_SCORE_STAR_WIDTH,
+                        compactStarTopY + OPPONENT_SCORE_STAR_HEIGHT),
+                GameColors::isArenaStarYellow);
+        int minStarYellowPixels = scaleSampledThreshold(MIN_STAR_YELLOW_PIXELS);
+
+        OpponentLayout layout;
+        if (serverLayoutYellow >= minStarYellowPixels
+                && serverLayoutYellow >= compactLayoutYellow) {
+            layout = OpponentLayout.SERVER_ROW;
+        } else if (compactLayoutYellow >= minStarYellowPixels) {
+            layout = OpponentLayout.COMPACT;
+        } else {
+            layout = OpponentLayout.UNKNOWN;
+        }
+
+        logDebug(String.format("Opponent %d layout probe: %s (upper star=%d, lower star=%d)",
+                opponentNumber, layout.label, serverLayoutYellow, compactLayoutYellow));
+        return layout;
+    }
+
+    private PowerRead readPower(int opponentY, int opponentNumber, OpponentLayout layout) {
+        PowerRead primary = readPowerRelationAt(
+                opponentY,
+                opponentNumber,
+                layout.powerYOffset(),
+                layout.label);
+        if (primary.relation() != PowerRelation.UNKNOWN) {
+            return enrichPowerWithOcr(opponentY, opponentNumber, layout.powerYOffset(), layout.label, primary);
+        }
+
+        OpponentLayout fallbackLayout = layout == OpponentLayout.COMPACT
+                ? OpponentLayout.SERVER_ROW
+                : OpponentLayout.COMPACT;
+        PowerRead fallback = readPowerRelationAt(
+                opponentY,
+                opponentNumber,
+                fallbackLayout.powerYOffset(),
+                fallbackLayout.label + " fallback");
+        if (fallback.relation() != PowerRelation.UNKNOWN) {
+            return enrichPowerWithOcr(opponentY, opponentNumber, fallbackLayout.powerYOffset(), fallbackLayout.label + " fallback", fallback);
+        }
+        return fallback;
+    }
+
+    private PowerRead readPowerRelationAt(int opponentY, int opponentNumber, int yOffset, String label) {
+        int powerY = opponentY + yOffset;
+        logDebug(String.format("Analyzing opponent %d power (%s, y=%d)",
+                opponentNumber, label, powerY));
+
+        PointData topLeft = new PointData(POWER_TEXT_RELATIVE_X, powerY);
+        PointData bottomRight = new PointData(
+                POWER_TEXT_RELATIVE_X + POWER_TEXT_WIDTH,
+                powerY + POWER_TEXT_HEIGHT);
+
+        BufferedImage image = captureFrameForPixelScan("arena power read");
+        if (image == null) {
+            return PowerRead.withoutValue(PowerRelation.UNKNOWN);
+        }
+
+        int backgroundPixels = countPixels(image, topLeft, bottomRight, GameColors::isArenaBlueGrey);
+        int greenPixels = countPixels(image, topLeft, bottomRight, GameColors::isArenaPowerGreen);
+        int redPixels = countPixels(image, topLeft, bottomRight, GameColors::isArenaPowerRed);
+        int totalColoredPixels = greenPixels + redPixels;
+        int minColoredPixels = scaleSampledThreshold(MIN_COLORED_PIXELS_THRESHOLD);
+
+        logDebug(String.format(
+                "Opponent %d power colors (%s) - Background: %d, Green: %d, Red: %d, TotalColor: %d, Threshold: %d",
+                opponentNumber, label, backgroundPixels, greenPixels, redPixels,
+                totalColoredPixels, minColoredPixels));
+
+        if (totalColoredPixels <= minColoredPixels) {
+            return PowerRead.withoutValue(PowerRelation.UNKNOWN);
+        }
+        if (greenPixels > redPixels * GREEN_DOMINANCE_RATIO) {
+            return PowerRead.withoutValue(PowerRelation.WEAKER);
+        }
+        if (redPixels > greenPixels * RED_DOMINANCE_RATIO) {
+            return PowerRead.withoutValue(PowerRelation.STRONGER);
+        }
+        return PowerRead.withoutValue(PowerRelation.UNKNOWN);
+    }
+
+    private PowerRead enrichPowerWithOcr(int opponentY, int opponentNumber, int yOffset, String label, PowerRead colorRead) {
+        if (colorRead.relation() != PowerRelation.WEAKER) {
+            return colorRead;
+        }
+        int powerY = opponentY + yOffset;
+        PointData topLeft = new PointData(POWER_TEXT_RELATIVE_X, powerY);
+        PointData bottomRight = new PointData(
+                POWER_TEXT_RELATIVE_X + POWER_TEXT_WIDTH,
+                powerY + POWER_TEXT_HEIGHT);
+
+        TesseractSettingsData powerSettings = TesseractSettingsData.assembler()
+                .pageAnalysis(TesseractSettingsData.PageAnalysis.SINGLE_LINE)
+                .recognitionEngine(TesseractSettingsData.RecognitionEngine.LSTM_ONLY)
+                .stripBackground(true)
+                .setTextColor(ARENA_POWER_GREEN_TEXT)
+                .charWhitelist("0123456789.,KMBkmb")
+                .build();
+
+        String text = stringHelper.attemptRecognition(
+                topLeft,
+                bottomRight,
+                3,
+                150L,
+                powerSettings,
+                value -> parsePowerValue(value) != null,
+                value -> value);
+        Double powerValue = parsePowerValue(text);
+        if (powerValue == null) {
+            logDebug(String.format("Opponent %d power OCR (%s) did not produce a sortable value.", opponentNumber, label));
+            return colorRead;
+        }
+
+        logDebug(String.format("Opponent %d power OCR (%s): '%s' -> %.0f",
+                opponentNumber, label, text, powerValue));
+        return new PowerRead(colorRead.relation(), powerValue, text);
+    }
+
+    private Double parsePowerValue(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        String normalized = text.trim().replace(" ", "");
+        Matcher matcher = POWER_VALUE_PATTERN.matcher(normalized);
+        if (!matcher.find()) {
+            return null;
+        }
+
+        String number = matcher.group(1);
+        String unit = matcher.group(2).toUpperCase(Locale.ROOT);
+        if (unit.isEmpty()) {
+            number = number.replace(",", "").replace(".", "");
+        } else if (number.contains(",") && !number.contains(".")) {
+            number = number.replace(",", ".");
+        } else {
+            number = number.replace(",", "");
+        }
+
+        try {
+            double value = Double.parseDouble(number);
+            return switch (unit) {
+                case "K" -> value * 1_000D;
+                case "M" -> value * 1_000_000D;
+                case "B" -> value * 1_000_000_000D;
+                default -> value;
+            };
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private AllianceRead readAllianceTag(int opponentY, int opponentNumber) {
+        String text = readOpponentText(
+                new PointData(OPPONENT_NAME_X, opponentY + OPPONENT_NAME_RELATIVE_Y),
+                new PointData(OPPONENT_NAME_X + OPPONENT_NAME_WIDTH, opponentY + OPPONENT_NAME_RELATIVE_Y + OPPONENT_NAME_HEIGHT),
+                "[]ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+                "alliance/name",
+                opponentNumber);
+
+        AllianceRead read = classifyAllianceText(text);
+        if (read.status == AllianceStatus.UNREADABLE) {
+            logDebug(String.format("Opponent %d alliance/name OCR inconclusive (%s). Retrying once.",
+                    opponentNumber, read.detail()));
+            sleepTask(OCR_RETRY_DELAY_MS);
+            String retryText = readOpponentText(
+                    new PointData(OPPONENT_NAME_X, opponentY + OPPONENT_NAME_RELATIVE_Y),
+                    new PointData(OPPONENT_NAME_X + OPPONENT_NAME_WIDTH, opponentY + OPPONENT_NAME_RELATIVE_Y + OPPONENT_NAME_HEIGHT),
+                    "[]ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+                    "alliance/name retry",
+                    opponentNumber);
+            read = classifyAllianceText(retryText);
+            if (read.status == AllianceStatus.UNREADABLE) {
+                logWarning(String.format("Opponent %d alliance/name OCR failed after retry (%s).",
+                        opponentNumber, read.detail()));
+            }
+        }
+
+        return read;
+    }
+
+    private AllianceRead classifyAllianceText(String text) {
+        if (text == null || text.isBlank()) {
+            return AllianceRead.unreadable("empty");
+        }
+        Matcher matcher = ALLIANCE_TAG_PATTERN.matcher(text);
+        if (matcher.find()) {
+            String tag = normalizeAllianceTag(matcher.group(1));
+            return AllianceRead.read(resolveProfileAllianceIfClose(tag));
+        }
+        if (looksLikeProfileAlliance(text)) {
+            return AllianceRead.read(profileAllianceTag);
+        }
+        Matcher malformedMatcher = MALFORMED_ALLIANCE_TAG_PATTERN.matcher(text);
+        if (malformedMatcher.find()) {
+            String tag = normalizeAllianceTag(malformedMatcher.group(1));
+            if (matchesProfileAllianceFuzzy(tag)) {
+                return AllianceRead.read(profileAllianceTag);
+            }
+            return AllianceRead.malformed(tag, "missing closing bracket");
+        }
+        String bracketlessTag = extractBracketlessAllianceTag(text);
+        if (bracketlessTag != null) {
+            if (matchesProfileAllianceFuzzy(bracketlessTag)) {
+                return AllianceRead.read(profileAllianceTag);
+            }
+            return AllianceRead.malformed(bracketlessTag, "bracket-like prefix");
+        }
+        String trailingBracketTag = extractTrailingBracketAllianceTag(text);
+        if (trailingBracketTag != null) {
+            if (matchesProfileAllianceFuzzy(trailingBracketTag)) {
+                return AllianceRead.read(profileAllianceTag);
+            }
+            return AllianceRead.malformed(trailingBracketTag, "bracket-like closing marker");
+        }
+        if (looksLikeGuard(text)) {
+            return AllianceRead.guard();
+        }
+        if (text.contains("[") || text.contains("]")) {
+            return AllianceRead.unreadable("bracket without tag");
+        }
+
+        return AllianceRead.noAlliance();
+    }
+
+    private ServerRead readServer(int opponentY, int opponentNumber, OpponentLayout layout) {
+        if (!layout.serverVisible()) {
+            return new ServerRead(null, ServerStatus.NOT_SHOWN);
+        }
+
+        String text = readOpponentText(
+                new PointData(OPPONENT_SERVER_X, opponentY + OPPONENT_SERVER_RELATIVE_Y),
+                new PointData(OPPONENT_SERVER_X + OPPONENT_SERVER_WIDTH, opponentY + OPPONENT_SERVER_RELATIVE_Y + OPPONENT_SERVER_HEIGHT),
+                "#0123456789",
+                new Color(255, 255, 255),
+                "server",
+                opponentNumber);
+
+        if (text == null || text.isBlank()) {
+            return new ServerRead(null, ServerStatus.NOT_SHOWN);
+        }
+
+        Matcher matcher = SERVER_PATTERN.matcher(text);
+        if (matcher.find()) {
+            return new ServerRead(normalizeServer(matcher.group(1)), ServerStatus.READ);
+        }
+
+        logDebug(String.format("Opponent %d server OCR failed. Retrying once.", opponentNumber));
+        sleepTask(OCR_RETRY_DELAY_MS);
+        String retryText = readOpponentText(
+                new PointData(OPPONENT_SERVER_X, opponentY + OPPONENT_SERVER_RELATIVE_Y),
+                new PointData(OPPONENT_SERVER_X + OPPONENT_SERVER_WIDTH, opponentY + OPPONENT_SERVER_RELATIVE_Y + OPPONENT_SERVER_HEIGHT),
+                "#0123456789",
+                new Color(255, 255, 255),
+                "server retry",
+                opponentNumber);
+        Matcher retryMatcher = SERVER_PATTERN.matcher(retryText == null ? "" : retryText);
+        if (retryMatcher.find()) {
+            return new ServerRead(normalizeServer(retryMatcher.group(1)), ServerStatus.READ);
+        }
+        logWarning(String.format("Opponent %d server OCR failed after retry: '%s'", opponentNumber, retryText));
+        return new ServerRead(null, ServerStatus.UNREADABLE);
+    }
+
+    private String readOpponentText(PointData topLeft, PointData bottomRight, String whitelist,
+                                    String label, int opponentNumber) {
+        return readOpponentText(topLeft, bottomRight, whitelist, null, label, opponentNumber);
+    }
+
+    private String readOpponentText(PointData topLeft, PointData bottomRight, String whitelist, Color textColor,
+                                    String label, int opponentNumber) {
+        TesseractSettingsData settings = TesseractSettingsData.assembler()
+                .pageAnalysis(TesseractSettingsData.PageAnalysis.SINGLE_LINE)
+                .recognitionEngine(TesseractSettingsData.RecognitionEngine.LSTM_ONLY)
+                .stripBackground(true)
+                .setTextColor(textColor)
+                .charWhitelist(whitelist)
+                .build();
+
+        String text = readStringValue(topLeft, bottomRight, settings);
+        logDebug(String.format("Opponent %d %s OCR result: %s",
+                opponentNumber, label, text == null ? "null" : "'" + text + "'"));
+        return text == null ? null : text.trim();
+    }
+
+    private BufferedImage captureFrameForPixelScan(String context) {
+        try {
+            RawImageData frame = emuManager.captureScreen(EMULATOR_NUMBER);
+            return TesseractOcrProvider.toBufferedImage(frame);
+        } catch (Exception ex) {
+            logError(String.format("%s color analysis failed: %s", context, ex.getMessage()));
+            return null;
+        }
+    }
+
+    private int countPixels(BufferedImage image, PointData topLeft, PointData bottomRight, IntPredicate matcher) {
+        return PixelStats.count(image, new AreaData(topLeft, bottomRight), matcher);
+    }
+
+    private int scaleSampledThreshold(int sampledThreshold) {
+        return sampledThreshold * COLOR_ANALYSIS_STEP_SIZE * COLOR_ANALYSIS_STEP_SIZE;
+    }
+
+    private boolean looksLikeProfileAlliance(String text) {
+        if (profileAllianceTag == null || text == null || text.isBlank()) {
+            return false;
+        }
+        String normalized = normalizeAllianceTag(text.replaceAll("[^A-Za-z0-9]", ""));
+        if (normalized == null) {
+            return false;
+        }
+        int prefixLength = Math.min(normalized.length(), Math.max(6, profileAllianceTag.length()));
+        return normalized.substring(0, prefixLength).contains(profileAllianceTag);
+    }
+
+    private String resolveProfileAllianceIfClose(String tag) {
+        return matchesProfileAllianceFuzzy(tag) ? profileAllianceTag : tag;
+    }
+
+    private boolean matchesProfileAllianceFuzzy(String tag) {
+        if (profileAllianceTag == null || tag == null || tag.length() != profileAllianceTag.length()) {
+            return false;
+        }
+        if (profileAllianceTag.equals(tag)) {
+            return true;
+        }
+        int differences = 0;
+        for (int i = 0; i < tag.length(); i++) {
+            if (tag.charAt(i) != profileAllianceTag.charAt(i)) {
+                differences++;
+            }
+        }
+        return differences <= 1;
+    }
+
+    private String extractBracketlessAllianceTag(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        String compact = text.replaceAll("\\s", "");
+        Matcher matcher = BRACKETLESS_ALLIANCE_TAG_PATTERN.matcher(compact);
+        if (!matcher.find()) {
+            return null;
+        }
+        String tag = normalizeAllianceTag(matcher.group(1));
+        return tag == null || tag.isBlank() ? null : tag;
+    }
+
+    private String extractTrailingBracketAllianceTag(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        String compact = text.replaceAll("\\s", "");
+        Matcher matcher = BRACKETLESS_TRAILING_BRACKET_PATTERN.matcher(compact);
+        if (!matcher.find()) {
+            return null;
+        }
+        String tag = normalizeAllianceTag(matcher.group(1));
+        return tag == null || tag.isBlank() ? null : tag;
+    }
+
+    private boolean looksLikeGuard(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String normalized = text.replaceAll("[^A-Za-z]", "").toUpperCase(Locale.ROOT);
+        return normalized.contains("COMMONGUARD")
+                || normalized.contains("VETERANGUARD")
+                || normalized.equals("GUARD");
+    }
+
+    private ChallengeOutcome challengeOpponent(OpponentCandidate opponent) {
+        logInfo(String.format("Challenging opponent %d (%s)", opponent.number(), opponent.selectionSummary()));
+
+        if (!isChallengeButtonEnabled(opponent)) {
+            logInfo(String.format(
+                    "Opponent %d challenge button is disabled. No free attempts available; checking extra attempts.",
+                    opponent.number()));
+            attempts = 0;
+            noDailyChallengesDetected = true;
+            return ChallengeOutcome.NO_ATTEMPTS;
+        }
+
+        attemptedOpponentSlots.add(opponent.number());
+        tapPoint(new PointData(OPPONENT_CHALLENGE_BUTTON_X, opponent.opponentY()));
+        sleepTask(2000);
+
+        executeBattleSequence();
+        attempts--;
+
+        boolean victory = checkBattleResult();
+        firstRun = false;
+        if (victory) {
+            StatisticsService.obtain().addToCounter(profile, "Arena Battles Won", 1);
+            attemptedOpponentSlots.clear();
+        } else {
+            StatisticsService.obtain().addToCounter(profile, "Arena Battles Lost", 1);
+        }
+        sleepTask(1000);
+        return victory ? ChallengeOutcome.VICTORY : ChallengeOutcome.DEFEAT;
+    }
+
+    private boolean isChallengeButtonEnabled(OpponentCandidate opponent) {
+        PointData topLeft = new PointData(
+                OPPONENT_CHALLENGE_BUTTON_X - OPPONENT_CHALLENGE_BUTTON_HALF_WIDTH,
+                opponent.opponentY() - OPPONENT_CHALLENGE_BUTTON_HALF_HEIGHT);
+        PointData bottomRight = new PointData(
+                OPPONENT_CHALLENGE_BUTTON_X + OPPONENT_CHALLENGE_BUTTON_HALF_WIDTH,
+                opponent.opponentY() + OPPONENT_CHALLENGE_BUTTON_HALF_HEIGHT);
+
+        BufferedImage image = captureFrameForPixelScan("arena challenge button");
+        if (image == null) {
+            logWarning(String.format(
+                    "Opponent %d challenge button color check failed. Treating button as disabled.",
+                    opponent.number()));
+            return false;
+        }
+
+        int saturatedBluePixels = countPixels(image, topLeft, bottomRight, GameColors::isArenaChallengeBlue);
+        int greyPixels = countPixels(image, topLeft, bottomRight, GameColors::isArenaChallengeGrey);
+        int darkPixels = countPixels(image, topLeft, bottomRight, GameColors::isArenaChallengeDark);
+        logDebug(String.format(
+                "Opponent %d challenge button colors - saturatedBlue: %d, grey: %d, dark: %d",
+                opponent.number(), saturatedBluePixels, greyPixels, darkPixels));
+
+        return saturatedBluePixels > scaleSampledThreshold(250) && saturatedBluePixels > greyPixels;
+    }
+
+    private void executeBattleSequence() {
+        logInfo("Executing battle sequence (with animation skip)");
+
+        tapPoint(QUICK_DEPLOY_BUTTON);
+        sleepTask(500);
+
+        tapPoint(BATTLE_START_BUTTON);
+        sleepTask(3000);
+
+        tapPoint(BATTLE_PAUSE_BUTTON);
+        sleepTask(500);
+
+        tapPoint(BATTLE_RETREAT_BUTTON);
+        sleepTask(1000);
+    }
+
+    private boolean checkBattleResult() {
+        ImageSearchResultData victoryResult = templateSearchHelper.locatePattern(
+                TemplatesEnum.ARENA_VICTORY,
+                SearchConfig.builder()
+                        .withArea(BATTLE_RESULT_AREA)
+                        .withMaxAttempts(3)
+                        .withDelay(250L)
+                        .withThreshold(85)
+                        .build());
+
+        if (victoryResult.isFound()) {
+            logInfo("Battle result: Victory");
+            sleepTask(1000);
+            pressBack();
+            return true;
+        }
+
+        logInfo("Battle result: Defeat");
+        sleepTask(1000);
+        pressBack();
+        return false;
+    }
+
     private int buyExtraAttempts() {
         logDebug("Opening extra attempts purchase dialog");
         tapPoint(EXTRA_ATTEMPTS_BUTTON);
-        sleepTask(1000); // Wait for purchase dialog to open
+        sleepTask(1000);
 
         ImageSearchResultData confirmResult = templateSearchHelper.locatePattern(
                 TemplatesEnum.ARENA_GEMS_EXTRA_ATTEMPTS_BUTTON,
@@ -452,55 +1085,42 @@ public class ArenaRoutine extends DelayedTask {
             return 0;
         }
 
-        // Reset counter to zero
         logDebug("Resetting purchase counter to zero");
         swipe(PURCHASE_COUNTER_SWIPE_START, PURCHASE_COUNTER_SWIPE_END);
-        sleepTask(300); // Wait for swipe animation
+        sleepTask(300);
 
-        // Determine current position in price sequence
         int previousAttempts = detectCurrentAttemptPosition();
         if (previousAttempts < 0) {
             pressBack();
             return 0;
         }
 
-        // Calculate how many more attempts we can/want to buy
         int remainingAttempts = calculateRemainingAttemptsToBuy(previousAttempts);
         if (remainingAttempts <= 0) {
             pressBack();
             return 0;
         }
 
-        // Calculate expected total price
         int expectedPrice = calculateTotalPrice(previousAttempts, remainingAttempts);
         logInfo(String.format("Buying %d attempts for %d gems (already have %d)",
                 remainingAttempts, expectedPrice, previousAttempts));
 
-        // Increment counter to desired amount (counter starts at 1, so increment n-1
-        // times)
         if (remainingAttempts > 1) {
             tapRandomPoint(
                     PURCHASE_COUNTER_INCREMENT_TOP_LEFT,
                     PURCHASE_COUNTER_INCREMENT_BOTTOM_RIGHT,
                     remainingAttempts - 1,
                     400);
-            sleepTask(300); // Wait for counter animation
+            sleepTask(300);
         }
 
-        // Confirm purchase
         tapPoint(PURCHASE_CONFIRM_BUTTON);
-        sleepTask(500); // Wait for purchase confirmation
+        sleepTask(500);
 
         StatisticsService.obtain().addToCounter(profile, "Arena Gems Spent", expectedPrice);
         return remainingAttempts;
     }
 
-    /**
-     * Detects the current position in the attempt purchase sequence by reading
-     * the displayed price and matching it against known prices.
-     * 
-     * @return attempt position (0-4), or -1 if detection was unsuccessful
-     */
     private int detectCurrentAttemptPosition() {
         logDebug("Detecting current attempt position via price");
 
@@ -520,7 +1140,6 @@ public class ArenaRoutine extends DelayedTask {
             return -1;
         }
 
-        // Find matching price in sequence
         for (int i = 0; i < ATTEMPT_PRICES.length; i++) {
             if (ATTEMPT_PRICES[i] == singleAttemptPrice) {
                 logDebug(String.format("Detected position %d (price: %d gems)", i, singleAttemptPrice));
@@ -532,13 +1151,6 @@ public class ArenaRoutine extends DelayedTask {
         return -1;
     }
 
-    /**
-     * Calculates how many more attempts should be purchased based on
-     * current position and configured limit.
-     * 
-     * @param previousAttempts how many attempts have already been bought
-     * @return number of attempts to buy (0 if none should be bought)
-     */
     private int calculateRemainingAttemptsToBuy(int previousAttempts) {
         if (previousAttempts >= extraAttempts) {
             logInfo(String.format("Already have %d attempts (wanted %d), no need to buy more",
@@ -558,13 +1170,6 @@ public class ArenaRoutine extends DelayedTask {
         return toBuy;
     }
 
-    /**
-     * Calculates the total gem cost for purchasing a range of attempts.
-     * 
-     * @param startPosition starting position in price sequence
-     * @param count         how many attempts to buy
-     * @return total gem cost
-     */
     private int calculateTotalPrice(int startPosition, int count) {
         int totalPrice = 0;
         for (int i = startPosition; i < startPosition + count; i++) {
@@ -573,423 +1178,33 @@ public class ArenaRoutine extends DelayedTask {
         return totalPrice;
     }
 
-    /**
-     * Processes all available challenge attempts.
-     * 
-     * <p>
-     * For each attempt:
-     * <ol>
-     * <li>Scans opponents from top to bottom</li>
-     * <li>Analyzes power text color (green = weaker, red = stronger)</li>
-     * <li>Challenges first weaker opponent found</li>
-     * <li>If no weaker opponents, tries to refresh list</li>
-     * <li>If no refreshes available, challenges first opponent anyway</li>
-     * </ol>
-     */
-    private void processChallenges() {
-        logInfo(String.format("Processing %d challenge attempts", attempts));
-
-        boolean inCyclingMode = false; // Track if we're in cycling mode (no weaker opponents found)
-
-        while (attempts > 0) {
-            if (!inCyclingMode) {
-                boolean foundWeakerOpponent = scanAndChallengeWeakerOpponent();
-
-                if (!foundWeakerOpponent) {
-                    if (!tryRefreshOpponentList()) {
-                        inCyclingMode = true; // Enter cycling mode since no weaker opponents and no refresh
-                        currentOpponentPosition = 0; // Start cycling from the beginning
-                        logInfo("Entering cycling mode. Starting from opponent 1.");
-                        boolean wonBattle = challengeNextOpponent();
-                        if (wonBattle) {
-                            // If we won, opponent list refreshed, exit cycling mode to check new opponents
-                            inCyclingMode = false;
-                            currentOpponentPosition = 0; // Reset position for new scan
-                            logInfo("Battle won. Opponent list refreshed. Checking for weaker opponents in new list.");
-                        }
-                    } else {
-                        currentOpponentPosition = 0; // Reset position after refresh
-                        logInfo("List refreshed. Rescanning from opponent 1.");
-                    }
-                }
-            } else {
-                // In cycling mode - directly challenge next opponent
-                boolean wonBattle = challengeNextOpponent();
-                if (wonBattle) {
-                    // If we won, opponent list refreshed, exit cycling mode to check new opponents
-                    inCyclingMode = false;
-                    currentOpponentPosition = 0; // Reset position for new scan
-                    logInfo("Battle won. Opponent list refreshed. Checking for weaker opponents in new list.");
-                }
-            }
-        }
-
-        logInfo("All challenge attempts used.");
-    }
-
-    /**
-     * Scans the opponent list from top to bottom and challenges the first
-     * opponent with predominantly green power text (indicating lower power).
-     * Skips opponents that have already been challenged and lost to in this
-     * execution.
-     * 
-     * @return true if a weaker opponent was found and challenged, false otherwise
-     */
-    private boolean scanAndChallengeWeakerOpponent() {
-        int baseY = firstRun ? OPPONENT_BASE_Y_FIRST_RUN : OPPONENT_BASE_Y_NORMAL;
-        boolean allSameState = true;
-        int startIndex = currentOpponentPosition;
-
-        for (int i = 0; i < MAX_OPPONENTS; i++) {
-            if (attempts <= 0) {
-                break;
-            }
-
-            int opponentIndex = (startIndex + i) % MAX_OPPONENTS;
-
-            int opponentY = baseY + (opponentIndex * OPPONENT_Y_SPACING);
-            int opponentStateY = OPPONENT_STATE_TOP_LEFT.getY() + (opponentIndex * OPPONENT_Y_SPACING);
-
-            // If player state is 0 (unconfigured), skip state verification
-            if (playerState != 0) {
-                // Check opponent's state
-                int opponentState = firstRun ? 0 : getOpponentState(opponentStateY);
-                logInfo(String.format("Opponent %d state: %d (our state: %d)", opponentIndex + 1, opponentState,
-                        playerState));
-                sleepTask(300);
-
-                if (opponentState == playerState) {
-                    continue; // Skip opponents from same state
-                }
-                allSameState = false;
-            } else {
-                logDebug("Player state is 0 (unconfigured), skipping state verification");
-                allSameState = false; // Don't force refresh when state checking is disabled
-            }
-
-            if (isOpponentWeaker(opponentY, opponentIndex + 1)) {
-                challengeOpponent(opponentY, opponentIndex + 1);
-                attempts--;
-
-                boolean victory = checkBattleResult();
-                if (victory) {
-                    StatisticsService.obtain().addToCounter(profile, "Arena Battles Won", 1);
-                    firstRun = false; // After first victory, UI changes
-                    // Victory refreshes the list, so we can continue scanning from the start
-                    sleepTask(1000);
-                    return true;
-                } else {
-                    StatisticsService.obtain().addToCounter(profile, "Arena Battles Lost", 1);
-                    // Lost the battle - update currentOpponentPosition to continue from next
-                    // opponent
-                    currentOpponentPosition = (opponentIndex + 1) % MAX_OPPONENTS;
-                    logInfo(String.format("Battle lost. Next scan will start from opponent %d",
-                            currentOpponentPosition + 1));
-                    sleepTask(1000);
-                    return true; // Still return true because we did challenge someone
-                }
-            }
-
-            sleepTask(300); // Wait for details window to close
-        }
-
-        // If all opponents were from the same state, try to refresh
-        if (allSameState) {
-            logInfo("All opponents are from the same state. Attempting list refresh.");
-            if (tryRefreshOpponentList()) {
-                currentOpponentPosition = 0; // Reset position after refresh
-                return scanAndChallengeWeakerOpponent(); // Recursively scan new list
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * Analyzes the power text color for a specific opponent to determine
-     * if they are weaker (green text) or stronger (red text).
-     * 
-     * @param opponentY      Y-coordinate of the opponent row
-     * @param opponentNumber opponent number for logging (1-5)
-     * @return true if opponent is weaker (green text), false otherwise
-     */
-    private boolean isOpponentWeaker(int opponentY, int opponentNumber) {
-        logDebug(String.format("Analyzing opponent %d power (y=%d)", opponentNumber, opponentY));
-
-        PointData topLeft = new PointData(POWER_TEXT_RELATIVE_X, opponentY);
-        PointData bottomRight = new PointData(
-                POWER_TEXT_RELATIVE_X + POWER_TEXT_WIDTH,
-                opponentY + POWER_TEXT_HEIGHT);
-
-        int[] colorCounts = emuManager.analyzeRegionColors(
-                EMULATOR_NUMBER,
-                topLeft,
-                bottomRight,
-                COLOR_ANALYSIS_STEP_SIZE);
-
-        int backgroundPixels = colorCounts[0];
-        int greenPixels = colorCounts[1];
-        int redPixels = colorCounts[2];
-        int totalColoredPixels = greenPixels + redPixels;
-
-        logDebug(String.format("Color counts - Background: %d, Green: %d, Red: %d, TotalColor: %d, Threshold: %d",
-                backgroundPixels, greenPixels, redPixels, totalColoredPixels, MIN_COLORED_PIXELS_THRESHOLD));
-
-        boolean isWeaker = (totalColoredPixels > MIN_COLORED_PIXELS_THRESHOLD) &&
-                (greenPixels > redPixels * GREEN_DOMINANCE_RATIO);
-
-        if (isWeaker) {
-            logInfo(String.format("Opponent %d has lower power (green text dominant)", opponentNumber));
-        } else {
-            logInfo(String.format("Opponent %d has higher power (red text), skipping", opponentNumber));
-        }
-
-        return isWeaker;
-    }
-
-    /**
-     * Challenges a specific opponent and handles the battle sequence.
-     * 
-     * @param opponentY      Y-coordinate of the opponent row
-     * @param opponentNumber opponent number for logging
-     */
-    private void challengeOpponent(int opponentY, int opponentNumber) {
-        logInfo(String.format("Challenging opponent %d", opponentNumber));
-
-        tapPoint(new PointData(OPPONENT_CHALLENGE_BUTTON_X, opponentY));
-        sleepTask(2000); // Wait for challenge confirmation screen
-
-        executeBattleSequence();
-    }
-
-    /**
-     * Challenges the next opponent in the cycling sequence regardless of power
-     * level.
-     * Handles state filtering and automatically moves to the next opponent after a
-     * loss.
-     * 
-     * @return true if battle was won (list will refresh), false if lost (continue
-     *         cycling)
-     */
-    private boolean challengeNextOpponent() {
-        int baseY = firstRun ? OPPONENT_BASE_Y_FIRST_RUN : OPPONENT_BASE_Y_NORMAL;
-        int checkedOpponents = 0; // Track how many opponents we've checked
-
-        logInfo(String.format("Cycling mode: starting from opponent %d", currentOpponentPosition + 1));
-
-        // Try up to MAX_OPPONENTS times to find a suitable opponent
-        while (checkedOpponents < MAX_OPPONENTS) {
-            int opponentY = baseY + (currentOpponentPosition * OPPONENT_Y_SPACING);
-            int opponentStateY = OPPONENT_STATE_TOP_LEFT.getY() + (currentOpponentPosition * OPPONENT_Y_SPACING);
-
-            // Check if this opponent is from a different state (or skip check if
-            // playerState is 0)
-            boolean shouldChallenge = false;
-
-            if (playerState != 0) {
-                int opponentState = firstRun ? 0 : getOpponentState(opponentStateY);
-                logInfo(String.format("Opponent %d state: %d (our state: %d)",
-                        currentOpponentPosition + 1, opponentState, playerState));
-                sleepTask(300);
-
-                shouldChallenge = (opponentState != playerState);
-            } else {
-                logDebug("Player state is 0 (unconfigured), challenging any opponent");
-                shouldChallenge = true;
-            }
-
-            if (shouldChallenge) {
-                // Found a suitable opponent - challenge them
-                logInfo(String.format("Challenging opponent %d in cycling mode", currentOpponentPosition + 1));
-
-                tapPoint(new PointData(OPPONENT_CHALLENGE_BUTTON_X, opponentY));
-                sleepTask(2000); // Wait for challenge screen
-
-                executeBattleSequence();
-                attempts--;
-
-                boolean won = checkBattleResult();
-                firstRun = false;
-                sleepTask(1000);
-
-                if (won) {
-                    StatisticsService.obtain().addToCounter(profile, "Arena Battles Won", 1);
-                    logInfo("Battle won. Opponent list will refresh.");
-                    // Don't increment position - let processChallenges reset it
-                    return true;
-                } else {
-                    StatisticsService.obtain().addToCounter(profile, "Arena Battles Lost", 1);
-                    // Lost - move to next opponent for next attempt
-                    logInfo(String.format("Battle lost against opponent %d", currentOpponentPosition + 1));
-                    currentOpponentPosition = (currentOpponentPosition + 1) % MAX_OPPONENTS;
-                    logInfo(String.format("Next cycling position: opponent %d", currentOpponentPosition + 1));
-                    return false;
-                }
-            }
-
-            // This opponent is from our state, try the next one
-            logDebug(String.format("Opponent %d is from our state, skipping", currentOpponentPosition + 1));
-            currentOpponentPosition = (currentOpponentPosition + 1) % MAX_OPPONENTS;
-            checkedOpponents++;
-        }
-
-        // We've checked all opponents and they're all from our state
-        logInfo("All opponents are from the same state in cycling mode. Attempting refresh.");
-
-        if (tryRefreshOpponentList()) {
-            currentOpponentPosition = 0; // Reset after completed successfullyful refresh
-            logInfo("Refresh successful. Will rescan opponents.");
-            return false; // Return to processChallenges to handle the refresh
-        }
-
-        // No refresh available and all opponents are from our state
-        // Challenge the current opponent anyway as a last resort
-        logWarning("No refreshes available. Challenging opponent regardless of state.");
-
-        int opponentY = baseY + (currentOpponentPosition * OPPONENT_Y_SPACING);
-        tapPoint(new PointData(OPPONENT_CHALLENGE_BUTTON_X, opponentY));
-        sleepTask(2000);
-
-        executeBattleSequence();
-        attempts--;
-
-        boolean won = checkBattleResult();
-        firstRun = false;
-        sleepTask(1000);
-
-        if (!won) {
-            StatisticsService.obtain().addToCounter(profile, "Arena Battles Lost", 1);
-            currentOpponentPosition = (currentOpponentPosition + 1) % MAX_OPPONENTS;
-            logInfo(String.format("Battle lost. Next position: opponent %d", currentOpponentPosition + 1));
-        } else {
-            StatisticsService.obtain().addToCounter(profile, "Arena Battles Won", 1);
-            logInfo("Battle won. Opponent list will refresh.");
-        }
-
-        return won;
-    }
-
-    /**
-     * Executes the battle sequence by starting the battle, then immediately
-     * pausing and retreating to skip the animation.
-     */
-    private void executeBattleSequence() {
-        logInfo("Executing battle sequence (with animation skip)");
-
-        tapPoint(QUICK_DEPLOY_BUTTON);
-        sleepTask(500); // Deploy
-
-        tapPoint(BATTLE_START_BUTTON);
-        sleepTask(3000); // Wait for battle to start
-
-        tapPoint(BATTLE_PAUSE_BUTTON);
-        sleepTask(500); // Wait for pause menu
-
-        tapPoint(BATTLE_RETREAT_BUTTON);
-        sleepTask(1000); // Wait for battle result screen
-    }
-
-    /**
-     * Checks the battle result screen via OCR to determine victory or defeat.
-     * 
-     * @return true if victory, false if defeat or unknown
-     */
-    private boolean checkBattleResult() {
-        TesseractSettingsData textSettings = TesseractSettingsData.assembler()
-                .charWhitelist("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-                .build();
-
-        String resultText = stringHelper.attemptRecognition(
-                VICTORY_TEXT_TOP_LEFT,
-                VICTORY_TEXT_BOTTOM_RIGHT,
-                3,
-                200L,
-                textSettings,
-                text -> text.matches("^[a-zA-Z]*$"),
-                text -> text.toLowerCase());
-
-        logDebug("OCR for result region: " + resultText);
-
-        if (resultText.contains("victory")) {
-            logInfo("Battle result: Victory");
-            sleepTask(1000); // Wait before dismissing
-            pressBack();
-            return true;
-        }
-
-        logInfo("Battle result: Defeat");
-        sleepTask(1000);
-        pressBack();
-        return false;
-    }
-
-    /**
-     * Reads the state number of a specific opponent.
-     * Adjusts reading coordinates based on the opponent's position in the list.
-     * 
-     * @param opponentY the Y-coordinate of the opponent's row
-     * @return the opponent's state number, or 0 if reading fails
-     */
-    private int getOpponentState(int opponentY) {
-        TesseractSettingsData configMap = TesseractSettingsData.assembler()
-                .setTextColor(Color.white)
-                .stripBackground(true)
-                .charWhitelist("0123456789")
-                .build();
-
-        // Calculate state coordinates relative to opponent's position
-        PointData stateTopLeft = new PointData(
-                OPPONENT_STATE_TOP_LEFT.getX(),
-                opponentY);
-
-        PointData stateBottomRight = new PointData(
-                OPPONENT_STATE_BOTTOM_RIGHT.getX(),
-                opponentY + 35); // Height of state region
-
-        Integer opponentState = readNumberValue(stateTopLeft, stateBottomRight, configMap);
-
-        if (opponentState == null) {
-            logError("Failed to read opponent state via OCR");
-            return 0;
-        }
-
-        return opponentState;
-    }
-
-    /**
-     * Attempts to refresh the opponent list.
-     * 
-     * <p>
-     * Refresh priority:
-     * <ol>
-     * <li>Free refresh (if available)</li>
-     * <li>Gem refresh (if enabled and within limit)</li>
-     * </ol>
-     * 
-     * @return true if refresh succeeded, false if no refresh available
-     */
     private boolean tryRefreshOpponentList() {
-        // Try free refresh first
-        ImageSearchResultData freeRefreshResult = templateSearchHelper.locatePattern(
-                TemplatesEnum.ARENA_FREE_REFRESH_BUTTON,
-                SearchConfig.builder().build());
+        if (freeRefreshCount >= MAX_FREE_REFRESHES) {
+            logInfo(String.format("Free list refresh limit reached (%d/%d)",
+                    freeRefreshCount, MAX_FREE_REFRESHES));
+        } else {
+            ImageSearchResultData freeRefreshResult = templateSearchHelper.locatePattern(
+                    TemplatesEnum.ARENA_FREE_REFRESH_BUTTON,
+                    SearchConfig.builder().build());
 
-        if (freeRefreshResult.isFound()) {
-            logInfo("Using free refresh");
-            tapPoint(freeRefreshResult.getPoint());
-            sleepTask(1000); // Wait for list to refresh
-            StatisticsService.obtain().addToCounter(profile, "Arena Refreshes", 1);
-            return true;
+            if (freeRefreshResult.isFound()) {
+                freeRefreshCount++;
+                logInfo(String.format("Using free refresh (%d/%d)", freeRefreshCount, MAX_FREE_REFRESHES));
+                tapPoint(freeRefreshResult.getPoint());
+                sleepTask(1000);
+                attemptedOpponentSlots.clear();
+                StatisticsService.obtain().addToCounter(profile, "Arena Refreshes", 1);
+                return true;
+            }
         }
 
-        // Try gem refresh if enabled and within limit
         if (!refreshWithGems) {
-            logDebug("Gem refresh disabled in configuration");
+            logDebug("Paid arena list refresh disabled in configuration");
             return false;
         }
 
         if (gemRefreshCount >= MAX_GEM_REFRESHES) {
-            logInfo(String.format("Gem refresh limit reached (%d/%d)",
+            logInfo(String.format("Gem list refresh limit reached (%d/%d)",
                     gemRefreshCount, MAX_GEM_REFRESHES));
             return false;
         }
@@ -999,40 +1214,39 @@ public class ArenaRoutine extends DelayedTask {
                 SearchConfig.builder().build());
 
         if (!gemsRefreshResult.isFound()) {
-            logDebug("Gem refresh button not found");
+            logDebug("Gem list refresh button not found");
             return false;
         }
 
-        gemRefreshCount++;
-        logInfo(String.format("Using gem refresh (%d/%d)", gemRefreshCount, MAX_GEM_REFRESHES));
+        logInfo(String.format("Opening gem list refresh (%d/%d)", gemRefreshCount + 1, MAX_GEM_REFRESHES));
 
         tapPoint(gemsRefreshResult.getPoint());
-        sleepTask(500); // Wait for confirmation popup
+        sleepTask(500);
 
-        // Confirm gem refresh
         ImageSearchResultData confirmResult = templateSearchHelper.locatePattern(
                 TemplatesEnum.ARENA_GEMS_REFRESH_CONFIRM_BUTTON,
                 SearchConfig.builder().build());
 
         if (confirmResult.isFound()) {
-            tapPoint(REFRESH_CONFIRM_BUTTON); // Tap checkbox if needed
-            sleepTask(300); // Wait for checkbox animation
+            gemRefreshCount++;
+            logInfo(String.format("Confirming gem list refresh (%d/%d)", gemRefreshCount, MAX_GEM_REFRESHES));
             tapPoint(confirmResult.getPoint());
-            sleepTask(1000); // Wait for list to refresh
+            sleepTask(1000);
+            attemptedOpponentSlots.clear();
             StatisticsService.obtain().addToCounter(profile, "Arena Refreshes", 1);
             return true;
         }
 
-        logWarning("Gem refresh confirmation button not found");
-        return false;
+        gemRefreshCount++;
+        logInfo(String.format(
+                "Gem list refresh confirmation not shown; assuming refresh was accepted (%d/%d)",
+                gemRefreshCount, MAX_GEM_REFRESHES));
+        sleepTask(1000);
+        attemptedOpponentSlots.clear();
+        StatisticsService.obtain().addToCounter(profile, "Arena Refreshes", 1);
+        return true;
     }
 
-    /**
-     * Validates if a time string is in valid HH:mm format (24-hour clock).
-     * 
-     * @param time time string to validate
-     * @return true if valid format, false otherwise
-     */
     private boolean isValidTimeFormat(String time) {
         if (time == null || time.trim().isEmpty()) {
             return false;
@@ -1053,10 +1267,6 @@ public class ArenaRoutine extends DelayedTask {
         }
     }
 
-    /**
-     * Reschedules the task based on configured activation time.
-     * If activation time is invalid, falls back to game reset time.
-     */
     private void rescheduleWithActivationHour() {
         if (!isValidTimeFormat(activationTime)) {
             logInfo("Rescheduling Arena task for 5 min before game reset time (invalid activation time)");
@@ -1091,10 +1301,6 @@ public class ArenaRoutine extends DelayedTask {
         }
     }
 
-    /**
-     * Reschedules the task for today's activation time.
-     * Used when task is triggered too early.
-     */
     private void rescheduleForToday() {
         if (!isValidTimeFormat(activationTime)) {
             logInfo("Rescheduling Arena task for 5 min before game reset time (invalid activation time)");
@@ -1128,6 +1334,21 @@ public class ArenaRoutine extends DelayedTask {
         }
     }
 
+    private String normalizeAllianceTag(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String normalizeServer(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String digits = value.replaceAll("\\D", "");
+        return digits.isBlank() ? null : digits;
+    }
+
     @Override
     protected LaunchPoint getRequiredStartLocation() {
         return LaunchPoint.HOME;
@@ -1136,5 +1357,250 @@ public class ArenaRoutine extends DelayedTask {
     @Override
     public boolean provideDailyMissionProgress() {
         return true;
+    }
+
+    private enum PowerRelation {
+        WEAKER("WEAKER", ""),
+        STRONGER("STRONGER", "stronger power"),
+        UNKNOWN("UNKNOWN", "power unreadable");
+
+        private final String label;
+        private final String skipReason;
+
+        PowerRelation(String label, String skipReason) {
+            this.label = label;
+            this.skipReason = skipReason;
+        }
+    }
+
+    private enum ChallengeOutcome {
+        VICTORY,
+        DEFEAT,
+        NO_ATTEMPTS
+    }
+
+    private enum OpponentLayout {
+        SERVER_ROW("server", POWER_TEXT_SERVER_LAYOUT_Y_OFFSET, true),
+        COMPACT("compact", POWER_TEXT_COMPACT_LAYOUT_Y_OFFSET, false),
+        UNKNOWN("unknown", POWER_TEXT_SERVER_LAYOUT_Y_OFFSET, true);
+
+        private final String label;
+        private final int powerYOffset;
+        private final boolean serverVisible;
+
+        OpponentLayout(String label, int powerYOffset, boolean serverVisible) {
+            this.label = label;
+            this.powerYOffset = powerYOffset;
+            this.serverVisible = serverVisible;
+        }
+
+        private int powerYOffset() {
+            return powerYOffset;
+        }
+
+        private boolean serverVisible() {
+            return serverVisible;
+        }
+    }
+
+    private record PowerRead(PowerRelation relation, Double value, String rawText) {
+        private static PowerRead withoutValue(PowerRelation relation) {
+            return new PowerRead(relation, null, null);
+        }
+
+        private String logValue() {
+            if (value == null) {
+                return relation.label;
+            }
+            return String.format(Locale.ROOT, "%s(%.0f)", relation.label, value);
+        }
+    }
+
+    private enum AllianceStatus {
+        READ,
+        MALFORMED,
+        NO_ALLIANCE,
+        GUARD,
+        UNREADABLE,
+        NOT_CHECKED
+    }
+
+    private enum ServerStatus {
+        READ,
+        NOT_SHOWN,
+        UNREADABLE,
+        NOT_CHECKED
+    }
+
+    private enum AlliancePolicy {
+        ANY("Any alliance"),
+        AVOID_PROFILE_ALLIANCE("Avoid profile alliance"),
+        NEVER_PROFILE_ALLIANCE("Never attack profile alliance");
+
+        private final String displayName;
+
+        AlliancePolicy(String displayName) {
+            this.displayName = displayName;
+        }
+
+        private static AlliancePolicy fromConfig(String value) {
+            if (value == null || value.isBlank()) {
+                return DEFAULT_ALLIANCE_POLICY;
+            }
+            for (AlliancePolicy policy : values()) {
+                if (policy.displayName.equalsIgnoreCase(value.trim()) || policy.name().equalsIgnoreCase(value.trim())) {
+                    return policy;
+                }
+            }
+            return DEFAULT_ALLIANCE_POLICY;
+        }
+
+        private static boolean isDefaultConfig(String value) {
+            return value == null
+                    || value.isBlank()
+                    || DEFAULT_ALLIANCE_POLICY.displayName.equalsIgnoreCase(value.trim())
+                    || DEFAULT_ALLIANCE_POLICY.name().equalsIgnoreCase(value.trim());
+        }
+
+        private Comparator<OpponentCandidate> comparator(String profileAllianceTag) {
+            return switch (this) {
+                case AVOID_PROFILE_ALLIANCE -> Comparator
+                        .comparingInt((OpponentCandidate candidate) -> candidate.allianceRisk(profileAllianceTag));
+                default -> (left, right) -> 0;
+            };
+        }
+    }
+
+    private enum ServerPolicy {
+        ANY("Any server"),
+        PREFER_PROFILE_SERVER("Prefer profile server"),
+        AVOID_PROFILE_SERVER("Avoid profile server"),
+        NEVER_PROFILE_SERVER("Never attack profile server");
+
+        private final String displayName;
+
+        ServerPolicy(String displayName) {
+            this.displayName = displayName;
+        }
+
+        private static ServerPolicy fromConfig(String value) {
+            if (value == null || value.isBlank()) {
+                return ANY;
+            }
+            for (ServerPolicy policy : values()) {
+                if (policy.displayName.equalsIgnoreCase(value.trim()) || policy.name().equalsIgnoreCase(value.trim())) {
+                    return policy;
+                }
+            }
+            return ANY;
+        }
+
+        private Comparator<OpponentCandidate> comparator(String profileServer) {
+            return switch (this) {
+                case PREFER_PROFILE_SERVER -> Comparator
+                        .comparing((OpponentCandidate candidate) -> !candidate.matchesServer(profileServer));
+                case AVOID_PROFILE_SERVER -> Comparator
+                        .comparing((OpponentCandidate candidate) -> candidate.matchesServer(profileServer));
+                default -> (left, right) -> 0;
+            };
+        }
+    }
+
+    private record AllianceRead(String tag, AllianceStatus status, String detail) {
+        private static AllianceRead notChecked() {
+            return new AllianceRead(null, AllianceStatus.NOT_CHECKED, null);
+        }
+
+        private static AllianceRead read(String tag) {
+            return new AllianceRead(tag, AllianceStatus.READ, null);
+        }
+
+        private static AllianceRead malformed(String tag, String detail) {
+            return new AllianceRead(tag, AllianceStatus.MALFORMED, detail);
+        }
+
+        private static AllianceRead noAlliance() {
+            return new AllianceRead(null, AllianceStatus.NO_ALLIANCE, null);
+        }
+
+        private static AllianceRead guard() {
+            return new AllianceRead(null, AllianceStatus.GUARD, null);
+        }
+
+        private static AllianceRead unreadable(String detail) {
+            return new AllianceRead(null, AllianceStatus.UNREADABLE, detail);
+        }
+
+        private String logValue() {
+            return switch (status) {
+                case READ -> tag;
+                case MALFORMED -> tag + " (malformed" + (detail == null ? "" : ": " + detail) + ")";
+                case NO_ALLIANCE -> "no alliance";
+                case GUARD -> "guard";
+                case UNREADABLE -> "unreadable" + (detail == null ? "" : ": " + detail);
+                case NOT_CHECKED -> "not checked";
+            };
+        }
+    }
+
+    private record ServerRead(String value, ServerStatus status) {
+        private static ServerRead notChecked() {
+            return new ServerRead(null, ServerStatus.NOT_CHECKED);
+        }
+
+        private String logValue() {
+            return switch (status) {
+                case READ -> value;
+                case NOT_SHOWN -> "not shown";
+                case UNREADABLE -> "unreadable";
+                case NOT_CHECKED -> "not checked";
+            };
+        }
+    }
+
+    private record OpponentCandidate(int number, int opponentY, PowerRead power, AllianceRead alliance,
+                                     ServerRead server, boolean eligible, String decision) {
+        private static OpponentCandidate eligible(int number, int opponentY, PowerRead power,
+                                                  AllianceRead alliance, ServerRead server) {
+            return new OpponentCandidate(number, opponentY, power, alliance, server, true, "eligible");
+        }
+
+        private static OpponentCandidate skipped(int number, int opponentY, PowerRead power,
+                                                 AllianceRead alliance, ServerRead server, String reason) {
+            return new OpponentCandidate(number, opponentY, power, alliance, server, false, "skip:" + reason);
+        }
+
+        private boolean matchesServer(String profileServer) {
+            return profileServer != null && server.status == ServerStatus.READ && profileServer.equals(server.value);
+        }
+
+        private boolean matchesAlliance(String profileAllianceTag) {
+            return profileAllianceTag != null
+                    && (alliance.status == AllianceStatus.READ || alliance.status == AllianceStatus.MALFORMED)
+                    && profileAllianceTag.equals(alliance.tag);
+        }
+
+        private int allianceRisk(String profileAllianceTag) {
+            if (matchesAlliance(profileAllianceTag)) {
+                return 2;
+            }
+            if (alliance.status == AllianceStatus.UNREADABLE || alliance.status == AllianceStatus.NOT_CHECKED) {
+                return 1;
+            }
+            return 0;
+        }
+
+        private boolean hasPowerValue() {
+            return power.value != null;
+        }
+
+        private double powerSortValue() {
+            return power.value != null ? power.value : Double.MAX_VALUE;
+        }
+
+        private String selectionSummary() {
+            return String.format("power=%s alliance=%s server=%s",
+                    power.logValue(), alliance.logValue(), server.logValue());
+        }
     }
 }

@@ -116,7 +116,7 @@ public class AccountDescriptor {
                 .filter(e -> key.equals(e.getSettingKey()) || key.name().equalsIgnoreCase(String.valueOf(e.getSettingKey())))
                 .findFirst();
 
-        if (match.isEmpty()) {
+        if (match.isEmpty() && !key.isLegacyOnly()) {
             entries.add(ConfigData.of(key, key.getDefaultValue(), -1L));
         }
 
