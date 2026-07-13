@@ -14,26 +14,9 @@
 	<name>Frostguard Desktop Application</name>
 	<description>JavaFX desktop shell, controller layer, and packaged runtime assets</description>
 
-	<!-- ─── Module-scoped version pins ─── -->
+	<!-- ─── Module-scoped properties (dependency/plugin versions managed by parent) ─── -->
 	<properties>
 		<project.build.outputName>frostguard-${project.version}</project.build.outputName>
-
-		<!-- Third-party UI libraries -->
-		<atlantafx.version>2.0.1</atlantafx.version>
-		<controlsfx.version>11.2.2</controlsfx.version>
-		<ikonli.version>12.3.1</ikonli.version>
-
-		<!-- Native access -->
-		<jna.version>5.13.0</jna.version>
-
-		<!-- Logging runtime -->
-		<logback.version>1.5.13</logback.version>
-
-		<!-- Maven plugin versions -->
-		<maven.jar.version>3.2.0</maven.jar.version>
-		<maven.dependency.version>3.3.0</maven.dependency.version>
-		<maven.resources.version>3.3.1</maven.resources.version>
-		<maven.assembly.version>3.7.1</maven.assembly.version>
 	</properties>
 
 	<!-- ─── Compile and runtime dependencies ─── -->
@@ -52,60 +35,57 @@
 		<dependency>
 			<groupId>io.github.mkpaz</groupId>
 			<artifactId>atlantafx-base</artifactId>
-			<version>${atlantafx.version}</version>
 		</dependency>
 
 		<!-- Extended JavaFX controls -->
 		<dependency>
 			<groupId>org.controlsfx</groupId>
 			<artifactId>controlsfx</artifactId>
-			<version>${controlsfx.version}</version>
 		</dependency>
 
 		<!-- Icon packs -->
 		<dependency>
 			<groupId>org.kordamp.ikonli</groupId>
 			<artifactId>ikonli-javafx</artifactId>
-			<version>${ikonli.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.kordamp.ikonli</groupId>
 			<artifactId>ikonli-materialdesign2-pack</artifactId>
-			<version>${ikonli.version}</version>
 		</dependency>
 
 		<!-- JNA for native OS calls -->
 		<dependency>
 			<groupId>net.java.dev.jna</groupId>
 			<artifactId>jna-platform</artifactId>
-			<version>${jna.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>net.java.dev.jna</groupId>
 			<artifactId>jna</artifactId>
-			<version>${jna.version}</version>
+		</dependency>
+
+		<!-- Static-analysis annotations (compile-time only) -->
+		<dependency>
+			<groupId>org.jetbrains</groupId>
+			<artifactId>annotations</artifactId>
+			<scope>provided</scope>
 		</dependency>
 
 		<!-- Internal modules -->
 		<dependency>
 			<groupId>dev.frostguard</groupId>
 			<artifactId>fg-api</artifactId>
-			<version>${revision}</version>
 		</dependency>
 		<dependency>
 			<groupId>dev.frostguard</groupId>
 			<artifactId>fg-engine</artifactId>
-			<version>${revision}</version>
 		</dependency>
 		<dependency>
 			<groupId>dev.frostguard</groupId>
 			<artifactId>fg-tasks</artifactId>
-			<version>${revision}</version>
 		</dependency>
 		<dependency>
 			<groupId>dev.frostguard</groupId>
 			<artifactId>fg-vision</artifactId>
-			<version>${revision}</version>
 		</dependency>
 
 		<!-- Logging -->
@@ -116,7 +96,6 @@
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>
-			<version>${logback.version}</version>
 			<scope>compile</scope>
 		</dependency>
 	</dependencies>
@@ -130,7 +109,6 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-assembly-plugin</artifactId>
-				<version>${maven.assembly.version}</version>
 				<executions>
 					<execution>
 						<id>build-desktop-zip</id>
@@ -152,7 +130,6 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-jar-plugin</artifactId>
-				<version>${maven.jar.version}</version>
 				<configuration>
 					<archive>
 						<manifest>
@@ -178,7 +155,6 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-dependency-plugin</artifactId>
-				<version>${maven.dependency.version}</version>
 				<executions>
 					<execution>
 						<id>stage-runtime-dependencies</id>
@@ -201,7 +177,6 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-resources-plugin</artifactId>
-				<version>${maven.resources.version}</version>
 				<executions>
 					<!-- ADB binaries -->
 					<execution>

@@ -20,15 +20,60 @@
 		<java.version>21</java.version>
 		<maven.compiler.source>21</maven.compiler.source>
 		<maven.compiler.target>21</maven.compiler.target>
+		<maven.compiler.release>21</maven.compiler.release>
 
 		<!-- Encoding -->
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-		<!-- Managed dependency versions -->
-		<javafx-version>23.0.1</javafx-version>
+		<!-- ── Managed dependency versions (single source of truth) ── -->
+		<!-- UI / JavaFX -->
+		<javafx.version>23.0.1</javafx.version>
+		<atlantafx.version>2.0.1</atlantafx.version>
+		<controlsfx.version>11.2.2</controlsfx.version>
+		<ikonli.version>12.3.1</ikonli.version>
+
+		<!-- Logging -->
 		<slf4j.version>2.0.17</slf4j.version>
-		<logback.version>1.4.14</logback.version>
+		<logback.version>1.5.13</logback.version>
+
+		<!-- Serialization -->
+		<jackson.version>2.17.2</jackson.version>
+
+		<!-- Persistence -->
+		<hibernate.version>7.0.8.Final</hibernate.version>
+		<sqlite.version>3.42.0.0</sqlite.version>
+		<hikaricp.version>5.0.1</hikaricp.version>
+		<jakarta.persistence.version>3.2.0</jakarta.persistence.version>
+		<jaxb.api.version>4.0.0</jaxb.api.version>
+		<jaxb.runtime.version>4.0.3</jaxb.runtime.version>
+
+		<!-- Vision / OCR -->
+		<opencv.version>4.9.0-0</opencv.version>
+		<tess4j.version>5.14.0</tess4j.version>
+
+		<!-- Engine integrations -->
+		<ddmlib.version>31.11.1</ddmlib.version>
+		<mixpanel.version>1.5.2</mixpanel.version>
+
+		<!-- Native access -->
+		<jna.version>5.13.0</jna.version>
+
+		<!-- Static-analysis annotations -->
+		<jetbrains.annotations.version>24.1.0</jetbrains.annotations.version>
+
+		<!-- Testing -->
+		<junit.jupiter.version>5.10.2</junit.jupiter.version>
+
+		<!-- ── Managed Maven plugin versions ── -->
+		<maven.compiler.plugin.version>3.13.0</maven.compiler.plugin.version>
+		<maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
+		<maven.jar.plugin.version>3.2.0</maven.jar.plugin.version>
+		<maven.dependency.plugin.version>3.3.0</maven.dependency.plugin.version>
+		<maven.resources.plugin.version>3.3.1</maven.resources.plugin.version>
+		<maven.assembly.plugin.version>3.7.1</maven.assembly.plugin.version>
+		<maven.shade.plugin.version>3.5.1</maven.shade.plugin.version>
+		<maven.antrun.plugin.version>3.1.0</maven.antrun.plugin.version>
 	</properties>
 
 	<!-- ──────────────────────────────────────────────
@@ -60,34 +105,229 @@
 	     ────────────────────────────────────────────── -->
 	<dependencyManagement>
 		<dependencies>
-			<!-- JavaFX UI controls -->
+			<!-- ── Internal reactor modules ── -->
+			<dependency>
+				<groupId>dev.frostguard</groupId>
+				<artifactId>fg-api</artifactId>
+				<version>${revision}</version>
+			</dependency>
+			<dependency>
+				<groupId>dev.frostguard</groupId>
+				<artifactId>fg-data</artifactId>
+				<version>${revision}</version>
+			</dependency>
+			<dependency>
+				<groupId>dev.frostguard</groupId>
+				<artifactId>fg-vision</artifactId>
+				<version>${revision}</version>
+			</dependency>
+			<dependency>
+				<groupId>dev.frostguard</groupId>
+				<artifactId>fg-engine</artifactId>
+				<version>${revision}</version>
+			</dependency>
+			<dependency>
+				<groupId>dev.frostguard</groupId>
+				<artifactId>fg-tasks</artifactId>
+				<version>${revision}</version>
+			</dependency>
+
+			<!-- ── JavaFX UI ── -->
 			<dependency>
 				<groupId>org.openjfx</groupId>
 				<artifactId>javafx-controls</artifactId>
-				<version>${javafx-version}</version>
+				<version>${javafx.version}</version>
 			</dependency>
-
-			<!-- JavaFX FXML support -->
 			<dependency>
 				<groupId>org.openjfx</groupId>
 				<artifactId>javafx-fxml</artifactId>
-				<version>${javafx-version}</version>
+				<version>${javafx.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>io.github.mkpaz</groupId>
+				<artifactId>atlantafx-base</artifactId>
+				<version>${atlantafx.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.controlsfx</groupId>
+				<artifactId>controlsfx</artifactId>
+				<version>${controlsfx.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.kordamp.ikonli</groupId>
+				<artifactId>ikonli-javafx</artifactId>
+				<version>${ikonli.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.kordamp.ikonli</groupId>
+				<artifactId>ikonli-materialdesign2-pack</artifactId>
+				<version>${ikonli.version}</version>
 			</dependency>
 
-			<!-- Logging facade -->
+			<!-- ── Native access ── -->
+			<dependency>
+				<groupId>net.java.dev.jna</groupId>
+				<artifactId>jna</artifactId>
+				<version>${jna.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>net.java.dev.jna</groupId>
+				<artifactId>jna-platform</artifactId>
+				<version>${jna.version}</version>
+			</dependency>
+
+			<!-- ── Static-analysis annotations ── -->
+			<dependency>
+				<groupId>org.jetbrains</groupId>
+				<artifactId>annotations</artifactId>
+				<version>${jetbrains.annotations.version}</version>
+			</dependency>
+
+			<!-- ── Serialization ── -->
+			<dependency>
+				<groupId>com.fasterxml.jackson.core</groupId>
+				<artifactId>jackson-annotations</artifactId>
+				<version>${jackson.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.fasterxml.jackson.core</groupId>
+				<artifactId>jackson-databind</artifactId>
+				<version>${jackson.version}</version>
+			</dependency>
+
+			<!-- ── Persistence ── -->
+			<dependency>
+				<groupId>org.xerial</groupId>
+				<artifactId>sqlite-jdbc</artifactId>
+				<version>${sqlite.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.zaxxer</groupId>
+				<artifactId>HikariCP</artifactId>
+				<version>${hikaricp.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.hibernate.orm</groupId>
+				<artifactId>hibernate-core</artifactId>
+				<version>${hibernate.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.hibernate.orm</groupId>
+				<artifactId>hibernate-community-dialects</artifactId>
+				<version>${hibernate.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>jakarta.persistence</groupId>
+				<artifactId>jakarta.persistence-api</artifactId>
+				<version>${jakarta.persistence.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>jakarta.xml.bind</groupId>
+				<artifactId>jakarta.xml.bind-api</artifactId>
+				<version>${jaxb.api.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.glassfish.jaxb</groupId>
+				<artifactId>jaxb-runtime</artifactId>
+				<version>${jaxb.runtime.version}</version>
+			</dependency>
+
+			<!-- ── Vision / OCR ── -->
+			<dependency>
+				<groupId>net.sourceforge.tess4j</groupId>
+				<artifactId>tess4j</artifactId>
+				<version>${tess4j.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>org.openpnp</groupId>
+				<artifactId>opencv</artifactId>
+				<version>${opencv.version}</version>
+			</dependency>
+
+			<!-- ── Engine integrations ── -->
+			<dependency>
+				<groupId>com.android.tools.ddms</groupId>
+				<artifactId>ddmlib</artifactId>
+				<version>${ddmlib.version}</version>
+			</dependency>
+			<dependency>
+				<groupId>com.mixpanel</groupId>
+				<artifactId>mixpanel-java</artifactId>
+				<version>${mixpanel.version}</version>
+			</dependency>
+
+			<!-- ── Logging ── -->
 			<dependency>
 				<groupId>org.slf4j</groupId>
 				<artifactId>slf4j-api</artifactId>
 				<version>${slf4j.version}</version>
 			</dependency>
-
-			<!-- Logging runtime -->
 			<dependency>
 				<groupId>ch.qos.logback</groupId>
 				<artifactId>logback-classic</artifactId>
 				<version>${logback.version}</version>
-				<scope>runtime</scope>
+			</dependency>
+
+			<!-- ── Testing ── -->
+			<dependency>
+				<groupId>org.junit.jupiter</groupId>
+				<artifactId>junit-jupiter</artifactId>
+				<version>${junit.jupiter.version}</version>
+				<scope>test</scope>
 			</dependency>
 		</dependencies>
 	</dependencyManagement>
+
+	<!-- ──────────────────────────────────────────────
+	     Centralised plugin version pinning
+	     ────────────────────────────────────────────── -->
+	<build>
+		<pluginManagement>
+			<plugins>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-compiler-plugin</artifactId>
+					<version>${maven.compiler.plugin.version}</version>
+					<configuration>
+						<parameters>true</parameters>
+					</configuration>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-surefire-plugin</artifactId>
+					<version>${maven.surefire.plugin.version}</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-jar-plugin</artifactId>
+					<version>${maven.jar.plugin.version}</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-dependency-plugin</artifactId>
+					<version>${maven.dependency.plugin.version}</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-resources-plugin</artifactId>
+					<version>${maven.resources.plugin.version}</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-assembly-plugin</artifactId>
+					<version>${maven.assembly.plugin.version}</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-shade-plugin</artifactId>
+					<version>${maven.shade.plugin.version}</version>
+				</plugin>
+				<plugin>
+					<groupId>org.apache.maven.plugins</groupId>
+					<artifactId>maven-antrun-plugin</artifactId>
+					<version>${maven.antrun.plugin.version}</version>
+				</plugin>
+			</plugins>
+		</pluginManagement>
+	</build>
 </project>

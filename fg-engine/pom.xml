@@ -15,14 +15,6 @@
     <name>Frostguard Engine</name>
     <description>Task scheduling, emulator device management, OCR pipelines, and push notifications.</description>
 
-    <properties>
-        <adb.bridge.version>31.11.1</adb.bridge.version>
-        <ocr.engine.version>5.14.0</ocr.engine.version>
-        <json.mapper.version>2.17.2</json.mapper.version>
-        <discord.api.version>5.3.0</discord.api.version>
-        <analytics.sdk.version>1.5.2</analytics.sdk.version>
-    </properties>
-
     <repositories>
         <repository>
             <id>google-maven</id>
@@ -31,48 +23,37 @@
         </repository>
     </repositories>
 
+    <!-- All dependency versions are managed centrally by the parent POM. -->
     <dependencies>
         <dependency>
             <groupId>dev.frostguard</groupId>
             <artifactId>fg-api</artifactId>
-            <version>${revision}</version>
         </dependency>
         <dependency>
             <groupId>dev.frostguard</groupId>
             <artifactId>fg-data</artifactId>
-            <version>${revision}</version>
         </dependency>
         <dependency>
             <groupId>dev.frostguard</groupId>
             <artifactId>fg-vision</artifactId>
-            <version>${revision}</version>
         </dependency>
 
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>${json.mapper.version}</version>
         </dependency>
         <dependency>
             <groupId>com.android.tools.ddms</groupId>
             <artifactId>ddmlib</artifactId>
-            <version>${adb.bridge.version}</version>
         </dependency>
         <dependency>
             <groupId>net.sourceforge.tess4j</groupId>
             <artifactId>tess4j</artifactId>
-            <version>${ocr.engine.version}</version>
             <scope>compile</scope>
-        </dependency>
-        <dependency>
-            <groupId>net.dv8tion</groupId>
-            <artifactId>JDA</artifactId>
-            <version>${discord.api.version}</version>
         </dependency>
         <dependency>
             <groupId>com.mixpanel</groupId>
             <artifactId>mixpanel-java</artifactId>
-            <version>${analytics.sdk.version}</version>
         </dependency>
 
         <dependency>
@@ -84,24 +65,11 @@
             <artifactId>logback-classic</artifactId>
             <scope>runtime</scope>
         </dependency>
-           <!-- Changed by pernerch | Date: 2026-07-02 | Why: add JUnit 5 so fg-engine regression tests can run. -->
+        <!-- JUnit 5 for fg-engine regression tests -->
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
-            <version>5.10.2</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <parameters>true</parameters>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
 </project>

@@ -17,95 +17,67 @@
     <description>Domain persistence — managed entities, repositories, and schema seeding over JPA.</description>
     <url>https://frostguard.dev</url>
 
-    <properties>
-        <!-- Dependency versions managed locally for this module -->
-        <orm.runtime.version>7.0.8.Final</orm.runtime.version>
-        <db.driver.version>3.42.0.0</db.driver.version>
-        <pool.version>5.0.1</pool.version>
-        <xml.bind.api.version>4.0.0</xml.bind.api.version>
-        <xml.bind.runtime.version>4.0.3</xml.bind.runtime.version>
-    </properties>
-
+    <!-- All dependency versions are managed centrally by the parent POM. -->
     <dependencies>
         <!-- fg-api: shared domain types and configuration enums -->
         <dependency>
-            <groupId>dev.frostguard</groupId> <!-- frostguard ecosystem -->
+            <groupId>dev.frostguard</groupId>
             <artifactId>fg-api</artifactId>
-            <version>${revision}</version>
         </dependency>
 
         <!-- xerial: embedded SQLite JDBC driver -->
         <dependency>
-            <groupId>org.xerial</groupId> <!-- xerial.org -->
-            <artifactId>sqlite-jdbc</artifactId> <!-- JDBC 4.x bridge -->
-            <version>${db.driver.version}</version>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
         </dependency>
 
         <!-- zaxxer: high-performance JDBC connection pool -->
         <dependency>
-            <groupId>com.zaxxer</groupId> <!-- zaxxer.com -->
-            <artifactId>HikariCP</artifactId> <!-- single-connection for SQLite -->
-            <version>${pool.version}</version>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
         </dependency>
 
         <!-- hibernate: JPA implementation core -->
         <dependency>
-            <groupId>org.hibernate.orm</groupId> <!-- hibernate.org -->
-            <artifactId>hibernate-core</artifactId> <!-- ORM runtime -->
-            <version>${orm.runtime.version}</version>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
         </dependency>
 
         <!-- hibernate: SQLite dialect from community dialects pack -->
         <dependency>
-            <groupId>org.hibernate.orm</groupId> <!-- hibernate.org community -->
-            <artifactId>hibernate-community-dialects</artifactId> <!-- dialect extensions -->
-            <version>${orm.runtime.version}</version>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-community-dialects</artifactId>
         </dependency>
 
         <!-- jakarta: persistence specification (JPA 3.2) -->
         <dependency>
-            <groupId>jakarta.persistence</groupId> <!-- jakarta.ee spec -->
-            <artifactId>jakarta.persistence-api</artifactId> <!-- API only -->
-            <version>3.2.0</version>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
         </dependency>
 
         <!-- jakarta: XML binding API for Hibernate metadata -->
         <dependency>
-            <groupId>jakarta.xml.bind</groupId> <!-- jakarta.ee xml -->
-            <artifactId>jakarta.xml.bind-api</artifactId> <!-- bind contract -->
-            <version>${xml.bind.api.version}</version>
+            <groupId>jakarta.xml.bind</groupId>
+            <artifactId>jakarta.xml.bind-api</artifactId>
         </dependency>
 
         <!-- glassfish: JAXB reference runtime -->
         <dependency>
-            <groupId>org.glassfish.jaxb</groupId> <!-- eclipse.org glassfish -->
-            <artifactId>jaxb-runtime</artifactId> <!-- runtime impl -->
-            <version>${xml.bind.runtime.version}</version>
+            <groupId>org.glassfish.jaxb</groupId>
+            <artifactId>jaxb-runtime</artifactId>
         </dependency>
 
         <!-- slf4j: logging abstraction layer -->
         <dependency>
-            <groupId>org.slf4j</groupId> <!-- slf4j.org -->
-            <artifactId>slf4j-api</artifactId> <!-- facade API -->
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
         </dependency>
 
-        <!-- logback: SLF4J runtime binding (test/runtime only) -->
+        <!-- logback: SLF4J runtime binding -->
         <dependency>
-            <groupId>ch.qos.logback</groupId> <!-- qos.ch -->
-            <artifactId>logback-classic</artifactId> <!-- classic module -->
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
             <scope>runtime</scope>
         </dependency>
     </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <parameters>true</parameters>
-                </configuration>
-            </plugin>
-        </plugins>
-    </build>
 </project>

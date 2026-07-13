@@ -25,13 +25,7 @@
 	     • Screen capture analysis utilities
 	     ═══════════════════════════════════════════════════════════════════ -->
 
-	<!-- ─── Library versions ─── -->
-	<properties>
-		<opencv.version>4.9.0-0</opencv.version>
-		<tess4j.version>5.14.0</tess4j.version>
-	</properties>
-
-	<!-- ─── Dependencies ─── -->
+	<!-- ─── Dependencies (versions managed centrally by parent POM) ─── -->
 	<dependencies>
 		<!-- ═══ Logging Infrastructure ═══ -->
 		
@@ -54,14 +48,12 @@
 		<dependency>
 			<groupId>net.sourceforge.tess4j</groupId>
 			<artifactId>tess4j</artifactId>
-			<version>${tess4j.version}</version>
 		</dependency>
 
 		<!-- OpenCV: Image processing and template matching -->
 		<dependency>
 			<groupId>org.openpnp</groupId>
 			<artifactId>opencv</artifactId>
-			<version>${opencv.version}</version>
 		</dependency>
 
 		<!-- ═══ Internal Module Dependencies ═══ -->
@@ -70,7 +62,6 @@
 		<dependency>
 			<groupId>dev.frostguard</groupId>
 			<artifactId>fg-api</artifactId>
-			<version>${revision}</version>
 		</dependency>
 	</dependencies>
 </project>

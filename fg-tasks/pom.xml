@@ -19,12 +19,17 @@
 		<dependency>
 			<groupId>dev.frostguard</groupId>
 			<artifactId>fg-engine</artifactId>
-			<version>${revision}</version>
 		</dependency>
 		<dependency>
 			<groupId>dev.frostguard</groupId>
 			<artifactId>fg-api</artifactId>
-			<version>${revision}</version>
+		</dependency>
+
+		<!-- Static-analysis annotations (compile-time only) -->
+		<dependency>
+			<groupId>org.jetbrains</groupId>
+			<artifactId>annotations</artifactId>
+			<scope>provided</scope>
 		</dependency>
 
 		<!-- Logging -->

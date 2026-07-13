@@ -17,11 +17,10 @@
 
 	<!-- ─── Runtime dependencies ─── -->
 	<dependencies>
-		<!-- JSON serialisation -->
+		<!-- JSON serialisation (version managed by parent) -->
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-databind</artifactId>
-			<version>2.17.2</version>
 		</dependency>
 
 		<!-- Logging facade -->
@@ -34,7 +33,6 @@
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>
-			<version>1.5.13</version>
 			<scope>compile</scope>
 		</dependency>
 	</dependencies>
@@ -46,7 +44,6 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-shade-plugin</artifactId>
-				<version>3.5.1</version>
 				<executions>
 					<execution>
 						<phase>package</phase>
@@ -69,7 +66,6 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-antrun-plugin</artifactId>
-				<version>3.1.0</version>
 				<executions>
 					<execution>
 						<id>cleanup-shade-backups</id>

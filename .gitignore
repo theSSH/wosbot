@@ -1,55 +1,50 @@
-.settings/org.eclipse.m2e.core.prefs
-log/bot.log
-.vscode/settings.json
-/temp
-
-# Ignore Maven build output
+# ── Maven build output ──
 target/
 **/target/
+dependency-reduced-pom.xml
 
-# Binaries
+# ── Binaries / compiled artifacts ──
 *.jar
 *.war
 *.ear
 *.class
 
-# Logs
+# Runtime-extracted native libraries (regenerated on launch from the classpath)
+/lib/opencv/
+
+# ── Logs ──
 *.log
 /log/
 **/log/
 
-# IDEs
+# ── Databases (SQLite runtime files) ──
+*.db*
+database.db-shm
+database.db-wal
+
+# ── Environment configs ──
+.env*
+
+# ── IDEs ──
 .idea/
-.vscode/
 *.iml
 *.iws
 *.ipr
 .project
 .classpath
 .settings/
+.vscode/
 .nb-gradle/
+.metadata/
+nbproject/private/
+fg-*/bin
+fg-*/.settings
 
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
+# ── Analysis / misc caches ──
+.scannerwork/
+.cache/
 
-# Build outputs
-fg-web/dist/
-dist/
-build/
-.next/
-out/
-
-# Environment configs
-.env*
-
-# Database
-*.db*
-
-# OS generated files
+# ── OS generated files ──
 .DS_Store
 .DS_Store?
 ._*
@@ -57,24 +52,6 @@ out/
 .Trashes
 ehthumbs.db
 Thumbs.db
-
-# Misc cache
-.cache/
-.vite/
-
-# Additional IDE files
-.metadata/
-nbproject/private/
-build/
 *.bak
 *.swp
 *~
-dependency-reduced-pom.xml
-.scannerwork/
-
-# Frostguard specific
-fg-*/bin
-fg-*/.settings
-database.db-shm
-database.db-wal
-

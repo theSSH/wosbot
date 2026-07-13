@@ -1,6 +1,10 @@
 package dev.frostguard.vision.match;
 
 import java.io.*;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -1734,32 +1738,73 @@ public class OpenCvPatternLocator {
     /**
      * Extracts a bundled native library from the classpath into
      * {@code lib/opencv/} and loads it via {@link System#load}.
+     *
+     * <p>The extraction is idempotent: if a previously extracted copy of the
+     * same size already exists on disk it is reused instead of being rewritten,
+     * avoiding an unnecessary ~50&nbsp;MB copy on every launch. The library is
+     * written to a temporary file and atomically moved into place so a crash
+     * mid-copy can never leave a truncated, unloadable binary behind.</p>
      */
     public static void extractAndLoadNative(String resourcePath) throws IOException {
         String[] segments = resourcePath.split("/");
         String fileName = segments[segments.length - 1];
 
-        File targetDir = new File("lib/opencv");
-        if (!targetDir.exists()) targetDir.mkdirs();
+        Path targetDir = Path.of("lib", "opencv");
+        Files.createDirectories(targetDir);
+        Path dest = targetDir.resolve(fileName);
 
-        File dest = new File(targetDir, fileName);
+        long bundledSize = bundledResourceSize(resourcePath);
+        boolean upToDate = bundledSize >= 0
+                && Files.isRegularFile(dest)
+                && Files.size(dest) == bundledSize;
 
-        try (InputStream src = OpenCvPatternLocator.class.getResourceAsStream(resourcePath);
-             OutputStream sink = new FileOutputStream(dest)) {
-            if (src == null) {
-                log.error(tagged("Bundled native not found: " + resourcePath));
-                throw new IOException("Bundled native not found: " + resourcePath);
+        if (upToDate) {
+            log.debug(tagged("Reusing cached native library: " + dest));
+        } else {
+            Path tmp = Files.createTempFile(targetDir, fileName + "-", ".tmp");
+            try (InputStream src = OpenCvPatternLocator.class.getResourceAsStream(resourcePath)) {
+                if (src == null) {
+                    Files.deleteIfExists(tmp);
+                    log.error(tagged("Bundled native not found: " + resourcePath));
+                    throw new IOException("Bundled native not found: " + resourcePath);
+                }
+                Files.copy(src, tmp, StandardCopyOption.REPLACE_EXISTING);
+                try {
+                    Files.move(tmp, dest, StandardCopyOption.REPLACE_EXISTING,
+                            StandardCopyOption.ATOMIC_MOVE);
+                } catch (AtomicMoveNotSupportedException atomicUnsupported) {
+                    Files.move(tmp, dest, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } catch (IOException ex) {
+                Files.deleteIfExists(tmp);
+                log.error(tagged("Native extraction failed: " + ex.getMessage()));
+                throw ex;
             }
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = src.read(buf)) != -1) sink.write(buf, 0, n);
-        } catch (IOException ex) {
-            log.error(tagged("Native extraction failed: " + ex.getMessage()));
-            throw ex;
         }
 
-        System.load(dest.getAbsolutePath());
-        log.info(tagged("Native library loaded from: " + dest.getPath()));
+        System.load(dest.toAbsolutePath().toString());
+        log.info(tagged("Native library loaded from: " + dest));
+    }
+
+    /**
+     * Returns the size, in bytes, of a classpath resource, or {@code -1} when
+     * the size cannot be determined (e.g. the resource is missing).
+     */
+    private static long bundledResourceSize(String resourcePath) {
+        try (InputStream src = OpenCvPatternLocator.class.getResourceAsStream(resourcePath)) {
+            if (src == null) {
+                return -1L;
+            }
+            long total = 0L;
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = src.read(buf)) != -1) {
+                total += n;
+            }
+            return total;
+        } catch (IOException ex) {
+            return -1L;
+        }
     }
 }
 
