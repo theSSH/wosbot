@@ -203,6 +203,24 @@ public class EmulatorController {
         return locatePattern(idx, frame, t, ORIGIN, FULL, th);
     }
 
+    public ImageSearchResultData locatePatternMultiScale(String idx, RawImageData frame,
+            TemplatesEnum t, PointData tl, PointData br, double th) {
+        requireBackend();
+        try { OpenCvPatternLocator.setContextLabel(label(idx));
+              return OpenCvPatternLocator.locatePatternMultiScale(frame, regionTpl(t.getTemplate()), tl, br, th);
+        } finally { OpenCvPatternLocator.clearContextLabel(); }
+    }
+    public ImageSearchResultData locatePatternMultiScale(String idx, TemplatesEnum t,
+            PointData tl, PointData br, double th) {
+        return locatePatternMultiScale(idx, captureScreen(idx), t, tl, br, th);
+    }
+    public ImageSearchResultData locatePatternMultiScale(String idx, TemplatesEnum t, double th) {
+        return locatePatternMultiScale(idx, captureScreen(idx), t, ORIGIN, FULL, th);
+    }
+    public ImageSearchResultData locatePatternMultiScale(String idx, RawImageData frame, TemplatesEnum t, double th) {
+        return locatePatternMultiScale(idx, frame, t, ORIGIN, FULL, th);
+    }
+
     public ImageSearchResultData locatePatternMono(String idx, TemplatesEnum t,
             PointData tl, PointData br, double th) {
         requireBackend(); RawImageData frame = captureScreen(idx);

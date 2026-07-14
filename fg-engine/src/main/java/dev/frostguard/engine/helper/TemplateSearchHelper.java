@@ -60,6 +60,10 @@ public class TemplateSearchHelper {
         return retrySearch(tpl, cfg, true, false);
     }
 
+    public ImageSearchResultData locatePatternMultiScale(TemplatesEnum tpl, SearchConfig cfg) {
+        return retrySearch(tpl, cfg, false, true);
+    }
+
     // ── multi-match (colour) ─────────────────────────────────────────
 
     public List<ImageSearchResultData> locateAllPatterns(TemplatesEnum tpl, SearchConfig cfg) {
@@ -75,17 +79,17 @@ public class TemplateSearchHelper {
     // ── retry loops ──────────────────────────────────────────────────
 
     private ImageSearchResultData retrySearch(TemplatesEnum tpl, SearchConfig cfg,
-                                              boolean mono, boolean ignored) {
+                                              boolean mono, boolean multiScale) {
         ImageSearchResultData last = null;
         for (int a = 1; a <= cfg.getMaxAttempts(); a++) {
-            last = mono ? doSearchGrey(tpl, cfg) : doSearch(tpl, cfg);
+            last = multiScale ? doSearchMultiScale(tpl, cfg) : mono ? doSearchGrey(tpl, cfg) : doSearch(tpl, cfg);
             if (last != null && last.isFound()) {
-                dbg(tpl.name() + " found @ attempt " + a);
+                dbg(tpl.name() + (multiScale ? " (multi-scale)" : "") + " found @ attempt " + a);
                 return last;
             }
             if (a < cfg.getMaxAttempts()) sleepWithPreemption(cfg.getDelayBetweenAttempts());
         }
-        dbg(tpl.name() + " not found after " + cfg.getMaxAttempts() + " attempts");
+        dbg(tpl.name() + (multiScale ? " (multi-scale)" : "") + " not found after " + cfg.getMaxAttempts() + " attempts");
         return last;
     }
 
@@ -116,6 +120,12 @@ public class TemplateSearchHelper {
         if (c.hasArea())        return emu.locatePatternMono(device, tpl, c.getArea().topLeft(), c.getArea().bottomRight(), c.getThreshold());
         if (c.hasCoordinates()) return emu.locatePatternMono(device, tpl, c.getStartPoint(), c.getEndPoint(), c.getThreshold());
         return emu.locatePatternMono(device, tpl, c.getThreshold());
+    }
+
+    private ImageSearchResultData doSearchMultiScale(TemplatesEnum tpl, SearchConfig c) {
+        if (c.hasArea())        return emu.locatePatternMultiScale(device, tpl, c.getArea().topLeft(), c.getArea().bottomRight(), c.getThreshold());
+        if (c.hasCoordinates()) return emu.locatePatternMultiScale(device, tpl, c.getStartPoint(), c.getEndPoint(), c.getThreshold());
+        return emu.locatePatternMultiScale(device, tpl, c.getThreshold());
     }
 
     private List<ImageSearchResultData> doMulti(TemplatesEnum tpl, SearchConfig c) {

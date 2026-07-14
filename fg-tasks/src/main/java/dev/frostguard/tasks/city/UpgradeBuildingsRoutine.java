@@ -10,7 +10,6 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.concurrent.CompletableFuture;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.jetbrains.annotations.NotNull;
@@ -19,8 +18,7 @@ import static dev.frostguard.api.configs.TemplatesEnum.BUILDING_BUTTON_SPEED;
 import static dev.frostguard.api.configs.TemplatesEnum.BUILDING_BUTTON_TRAIN;
 import static dev.frostguard.api.configs.TemplatesEnum.BUILDING_BUTTON_UPGRADE;
 import static dev.frostguard.api.configs.TemplatesEnum.BUILDING_SURVIVOR_BUTTON_UPGRADE;
-import static dev.frostguard.api.configs.TemplatesEnum.GAME_HOME_SHORTCUTS_HELP_REQUEST;
-import static dev.frostguard.api.configs.TemplatesEnum.GAME_HOME_SHORTCUTS_HELP_REQUEST1;
+import static dev.frostguard.api.configs.TemplatesEnum.GAME_HOME_SHORTCUTS_HELP_REQUEST4;
 import static dev.frostguard.api.configs.TemplatesEnum.GAME_HOME_SHORTCUTS_OBTAIN;
 import static dev.frostguard.engine.nav.ButtonConstants.*;
 import static dev.frostguard.engine.nav.LeftMenuTextSettings.*;
@@ -207,10 +205,7 @@ private void handleSurvivorBuilding() {
         tapRandomPoint(new PointData(450, 1190), new PointData(600, 1230), 1, 1000);
 
 
-        ImageSearchResultData helpButton = templateSearchHelper.locatePattern(GAME_HOME_SHORTCUTS_HELP_REQUEST,
-                SearchConfigConstants.RESILIENT);
-        if (helpButton.isFound()) {
-            tapRandomPoint(helpButton.getPoint(), helpButton.getPoint(), 1, 1000);
+        if (tapAllianceHelp()) {
             sleepTask(500);
             tapRandomPoint(new PointData(540, 1200), new PointData(700, 1250), 1, 1000);
         }
@@ -427,7 +422,7 @@ private void startBuildingAction(String actionName, PointData buttonTopLeft, Poi
         tapRandomPoint(BUILDING_CONFIRM_BUTTON_AREA_VALUE.topLeft(), BUILDING_CONFIRM_BUTTON_AREA_VALUE.bottomRight());
 
 
-        requestHelpFlow();
+        tapAllianceHelp();
     }
 
 private boolean isBuildButtonVisible() {
@@ -604,28 +599,17 @@ private List<UpgradeBuildingsRoutine.QueueReadout> inspectAllQueues() {
         return results;
     }
 
-private void requestHelpFlow() {
+private boolean tapAllianceHelp() {
+        ImageSearchResultData help = templateSearchHelper.locatePatternMultiScale(
+                GAME_HOME_SHORTCUTS_HELP_REQUEST4, SearchConfigConstants.HIGH_SENSITIVITY);
 
-
-        CompletableFuture<ImageSearchResultData> helpFuture = CompletableFuture
-                .supplyAsync(() -> templateSearchHelper.locatePattern(GAME_HOME_SHORTCUTS_HELP_REQUEST,
-                        SearchConfigConstants.RESILIENT));
-
-        CompletableFuture<ImageSearchResultData> help1Future = CompletableFuture
-                .supplyAsync(() -> templateSearchHelper.locatePattern(GAME_HOME_SHORTCUTS_HELP_REQUEST1,
-                        SearchConfigConstants.RESILIENT));
-
-        CompletableFuture.allOf(helpFuture, help1Future).join();
-
-        ImageSearchResultData helpButton = helpFuture.join();
-        ImageSearchResultData helpButton1 = help1Future.join();
-
-        if (helpButton.isFound()) {
-            tapRandomPoint(helpButton.getPoint(), helpButton.getPoint(), 1, 0);
+        if (help == null || !help.isFound()) {
+            logWarning(routineLogUpgradeBuildingsLine("Alliance help button not detected"));
+            return false;
         }
-        if (helpButton1.isFound()) {
-            tapRandomPoint(helpButton1.getPoint(), helpButton1.getPoint(), 1, 0);
-        }
+
+        tapRandomPoint(help.getPoint(), help.getPoint(), 1, 500);
+        return true;
     }
 
 private void reachCityView() {

@@ -14,6 +14,7 @@ import org.opencv.core.MatOfByte;
 import org.opencv.core.Point;
 import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
+import org.opencv.core.Size;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 
@@ -161,6 +162,113 @@ public class OpenCvPatternLocator {
                                                       double threshold, int limit) {
         return scanCaptureMulti(capture.getData(), capture.getWidth(), capture.getHeight(),
                 capture.getBpp(), spritePath, topLeft, bottomRight, threshold, limit);
+    }
+
+    public static ImageSearchResultData locatePatternMultiScale(RawImageData capture, String spritePath,
+                                                      PointData topLeft, PointData bottomRight,
+                                                      double threshold) {
+        return scanCaptureMultiScale(capture.getData(), capture.getWidth(), capture.getHeight(),
+                capture.getBpp(), spritePath, topLeft, bottomRight, threshold);
+    }
+
+    private static final double[] MS_SCALE_ORDER = {
+            0.80, 1.15, 0.75, 1.00, 0.90, 1.25, 1.05,
+            0.85, 0.95, 1.10, 1.20, 0.70, 0.65, 0.60
+    };
+    private static final double MS_EARLY_ACCEPT_SCORE = 95.0;
+
+    public static ImageSearchResultData scanCaptureMultiScale(byte[] rawImageData, int width, int height, int bpp,
+            String spritePath, PointData upperLeft, PointData lowerRight, double threshold) {
+
+        long startTime = System.currentTimeMillis();
+        String[] pathParts = spritePath.split("/");
+        String spriteLabel = pathParts[pathParts.length - 1];
+
+        Mat frameMat = null;
+        Mat template = null;
+        Mat roiSlice = null;
+
+        try {
+            frameMat = pixelsToMat(rawImageData, width, height, bpp);
+            if (frameMat.empty()) {
+                return new ImageSearchResultData(false, null, 0.0);
+            }
+
+            int clipX = upperLeft.getX();
+            int clipY = upperLeft.getY();
+            int clipW = lowerRight.getX() - upperLeft.getX();
+            int clipH = lowerRight.getY() - upperLeft.getY();
+            if (clipW <= 0 || clipH <= 0
+                    || clipX + clipW > frameMat.cols() || clipY + clipH > frameMat.rows()) {
+                return new ImageSearchResultData(false, null, 0.0);
+            }
+
+            template = fetchSprite(spritePath);
+            if (template.empty()) {
+                return new ImageSearchResultData(false, null, 0.0);
+            }
+
+            roiSlice = new Mat(frameMat, new Rect(clipX, clipY, clipW, clipH));
+
+            double bestScore = -1.0;
+            double bestScale = 0.0;
+            int bestX = 0, bestY = 0, bestW = 0, bestH = 0;
+
+            for (double scale : MS_SCALE_ORDER) {
+                int tw = (int) Math.round(template.cols() * scale);
+                int th = (int) Math.round(template.rows() * scale);
+                if (tw < 8 || th < 8 || tw > roiSlice.cols() || th > roiSlice.rows()) {
+                    continue;
+                }
+
+                Mat scaled = new Mat();
+                Mat heatmap = new Mat();
+                try {
+                    Imgproc.resize(template, scaled, new Size(tw, th), 0, 0,
+                            scale < 1.0 ? Imgproc.INTER_AREA : Imgproc.INTER_CUBIC);
+                    Imgproc.matchTemplate(roiSlice, scaled, heatmap, Imgproc.TM_CCOEFF_NORMED);
+                    Core.MinMaxLocResult mmr = Core.minMaxLoc(heatmap);
+                    double score = Math.max(-1.0, Math.min(1.0, mmr.maxVal));
+                    if (!Double.isNaN(score) && !Double.isInfinite(score) && score > bestScore) {
+                        bestScore = score;
+                        bestScale = scale;
+                        bestX = (int) mmr.maxLoc.x;
+                        bestY = (int) mmr.maxLoc.y;
+                        bestW = tw;
+                        bestH = th;
+                        if (score * 100.0 >= MS_EARLY_ACCEPT_SCORE) {
+                            break;
+                        }
+                    }
+                } finally {
+                    scaled.release();
+                    heatmap.release();
+                }
+            }
+
+            double scorePct = bestScore * 100.0;
+            long totalTime = System.currentTimeMillis() - startTime;
+
+            if (bestScore < 0.0 || scorePct < threshold) {
+                log.info("=== Pattern Correlation Completed === Pattern: {} (multi-scale), Total: {} ms, Match: {}%, Scale: {} (BELOW threshold)",
+                        spriteLabel, totalTime, String.format("%.2f", scorePct), String.format("%.2f", bestScale));
+                return new ImageSearchResultData(false, null, scorePct);
+            }
+
+            int centerX = bestX + clipX + bestW / 2;
+            int centerY = bestY + clipY + bestH / 2;
+            log.info("=== Pattern Correlation Completed === Pattern: {} (multi-scale), Total: {} ms, Match: {}%, Scale: {}, Position: ({},{})",
+                    spriteLabel, totalTime, String.format("%.2f", scorePct), String.format("%.2f", bestScale), centerX, centerY);
+            return new ImageSearchResultData(true, new PointData(centerX, centerY), scorePct);
+
+        } catch (Exception e) {
+            log.error(tagged("Exception during multi-scale correlation"), e);
+            return new ImageSearchResultData(false, null, 0.0);
+        } finally {
+            if (roiSlice != null) roiSlice.release();
+            if (template != null) template.release();
+            if (frameMat != null) frameMat.release();
+        }
     }
 
     /** Greyscale single-hit search against a raw device capture. */
