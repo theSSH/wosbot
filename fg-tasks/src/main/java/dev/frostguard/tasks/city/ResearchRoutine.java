@@ -1,11 +1,15 @@
 package dev.frostguard.tasks.city;
 
+import dev.frostguard.api.configs.ConfigurationKeyEnum;
+import dev.frostguard.api.configs.ResearchCategoryEnum;
 import dev.frostguard.api.configs.TemplatesEnum;
 import dev.frostguard.api.configs.TpDailyTaskEnum;
 import dev.frostguard.api.domain.AccountDescriptor;
 import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.api.domain.PointData;
+import dev.frostguard.api.domain.PriorityItemData;
 import dev.frostguard.api.domain.RawImageData;
+import dev.frostguard.engine.config.PriorityConfigResolver;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
@@ -145,112 +149,14 @@ public ResearchRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
         sleepTask(300);
 
 
-        boolean growthSelected = profile.getConfig(dev.frostguard.api.configs.ConfigurationKeyEnum.RESEARCH_GROWTH_BOOL, Boolean.class);
-        boolean economySelected = profile.getConfig(dev.frostguard.api.configs.ConfigurationKeyEnum.RESEARCH_ECONOMY_BOOL, Boolean.class);
-        boolean battleSelected = profile.getConfig(dev.frostguard.api.configs.ConfigurationKeyEnum.RESEARCH_BATTLE_BOOL, Boolean.class);
-
-        java.util.List<java.lang.Runnable> clickActions = new java.util.ArrayList<>();
-
-        if (growthSelected) {
-            clickActions.add(() -> tapPoint(new PointData(java.util.concurrent.ThreadLocalRandom.current().nextInt(58, 211), java.util.concurrent.ThreadLocalRandom.current().nextInt(88, 137))));
-        }
-        if (economySelected) {
-            clickActions.add(() -> tapPoint(new PointData(java.util.concurrent.ThreadLocalRandom.current().nextInt(274, 445), java.util.concurrent.ThreadLocalRandom.current().nextInt(84, 142))));
-        }
-        if (battleSelected) {
-            clickActions.add(() -> tapPoint(new PointData(java.util.concurrent.ThreadLocalRandom.current().nextInt(499, 671), java.util.concurrent.ThreadLocalRandom.current().nextInt(99, 139))));
+        ImageSearchResultData researchTextResult = findResearchInPriorityCategories();
+        if (researchTextResult == null) {
+            logWarning(routineLogResearchLine("No enabled category had an available research. Planning next run in 1 hour."));
+            this.reschedule(LocalDateTime.now().plusHours(1));
+            return;
         }
 
-
-        if (clickActions.isEmpty()) {
-            clickActions.add(() -> tapPoint(new PointData(java.util.concurrent.ThreadLocalRandom.current().nextInt(58, 211), java.util.concurrent.ThreadLocalRandom.current().nextInt(88, 137))));
-            clickActions.add(() -> tapPoint(new PointData(java.util.concurrent.ThreadLocalRandom.current().nextInt(274, 445), java.util.concurrent.ThreadLocalRandom.current().nextInt(84, 142))));
-            clickActions.add(() -> tapPoint(new PointData(java.util.concurrent.ThreadLocalRandom.current().nextInt(499, 671), java.util.concurrent.ThreadLocalRandom.current().nextInt(99, 139))));
-        }
-
-        if (!clickActions.isEmpty()) {
-            int randomIndex = java.util.concurrent.ThreadLocalRandom.current().nextInt(clickActions.size());
-            clickActions.get(randomIndex).run();
-            sleepTask(500);
-        }
-
-
-        logDebug(routineLogResearchLine("Normalizing research menu with swipes..."));
-        for (int i = 0; i < 3; i++) {
-            swipe(new PointData(489, 320), new PointData(489, 1156));
-            sleepTask(500);
-        }
-
-
-        TemplatesEnum[] researchTemplates = {
-                TemplatesEnum.RESEARCH_0_3,
-                TemplatesEnum.RESEARCH_1_3,
-                TemplatesEnum.RESEARCH_2_3
-        };
-
-        for (int scrollAttempt = 0; scrollAttempt < MAX_SCROLL_ATTEMPTS_LIMIT; scrollAttempt++) {
-            checkPreemption();
-            sleepTask(500);
-
-            RawImageData researchScreenshot = emuManager.captureScreen(EMULATOR_NUMBER);
-            if (researchScreenshot == null) {
-                logWarning(routineLogResearchLine("Could not capture screenshot for research template search."));
-                continue;
-            }
-
-
-            List<ImageSearchResultData> foundResults = new ArrayList<>();
-            for (TemplatesEnum template : researchTemplates) {
-                // Single-hit search would return only the single best-correlated occurrence
-                // across the whole screen. An untouched tree renders several nodes with the
-                // identical "X/3" badge at once, so it must find ALL of them here for
-                // "topmost of foundResults" below to actually mean the topmost node on screen
-                // (the earliest still-incomplete one, which prerequisite-ordering guarantees is
-                // always the unlocked one) instead of an arbitrary same-looking match.
-                List<ImageSearchResultData> templateResults = emuManager.locateAllPatterns(
-                        EMULATOR_NUMBER, researchScreenshot, template,
-                        new PointData(0, 0), new PointData(720, 1280), 90.0, 10);
-                if (!templateResults.isEmpty()) {
-                    logInfo(routineLogResearchLine("Detected " + templateResults.size()
-                            + " node(s) with template: " + template.name()));
-                    foundResults.addAll(templateResults);
-                }
-            }
-
-            if (!foundResults.isEmpty()) {
-
-
-                ImageSearchResultData highest = foundResults.stream()
-                        .min(Comparator.comparingInt(r -> r.getPoint().getY()))
-                        .get();
-                logInfo(routineLogResearchLine("Pressing research template at position: (" + highest.getPoint().getX() + ", "
-                        + highest.getPoint().getY() + ") with offset"));
-
-                PointData researchPoint = highest.getPoint();
-                PointData adjustedResearchPoint = new PointData(researchPoint.getX() + RESEARCH_CLICK_OFFSET_X_VALUE,
-                        researchPoint.getY() + RESEARCH_CLICK_OFFSET_Y_VALUE);
-
-                tapPoint(adjustedResearchPoint);
-                sleepTask(300);
-                break;
-            }
-
-
-            logDebug(routineLogResearchLine("Zero research templates detected, scrolling up (attempt " + (scrollAttempt + 1) + "/"
-                    + MAX_SCROLL_ATTEMPTS_LIMIT + ")"));
-            swipe(new PointData(489, 800), new PointData(489, 300));
-        }
-
-        sleepTask(1000);
-
-
-        RawImageData researchTextScreenshot = emuManager.captureScreen(EMULATOR_NUMBER);
-        if (researchTextScreenshot != null) {
-            ImageSearchResultData researchTextResult = emuManager.locatePattern(
-                    EMULATOR_NUMBER, researchTextScreenshot, TemplatesEnum.RESEARCH_TEXT, 80.0);
-
-            if (researchTextResult != null && researchTextResult.isFound()) {
-                logInfo(routineLogResearchLine("Research text template detected."));
+        logInfo(routineLogResearchLine("Research text template detected."));
 
 
                 tapPoint(researchTextResult.getPoint());
@@ -323,12 +229,121 @@ public ResearchRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
                 } else {
                     logWarning(routineLogResearchLine("Could not OCR research time. Falling back to 1 hour reschedule."));
                 }
-            } else {
-                logWarning(routineLogResearchLine("Research text template not detected."));
-            }
-        }
 
         this.reschedule(LocalDateTime.now().plusHours(1));
+    }
+
+private ImageSearchResultData findResearchInPriorityCategories() {
+        List<PriorityItemData> priorities = PriorityConfigResolver.activeRankings(
+                profile, ConfigurationKeyEnum.RESEARCH_PRIORITIES_STRING);
+        if (priorities.isEmpty()) {
+            logWarning(routineLogResearchLine("No research categories enabled."));
+            return null;
+        }
+
+        for (PriorityItemData priority : priorities) {
+            ResearchCategoryEnum category = ResearchCategoryEnum.fromKey(priority.getIdentifier());
+            if (category == null) {
+                logWarning(routineLogResearchLine("Ignoring unknown research category priority: " + priority.getIdentifier()));
+                continue;
+            }
+
+            logInfo(routineLogResearchLine("Trying category '" + category.label()
+                    + "' (priority " + priority.getPriority() + ")."));
+            tapCategoryTab(category);
+            sleepTask(500);
+
+            if (!findAndTapResearchNode()) {
+                logInfo(routineLogResearchLine("No available tech node in '" + category.label()
+                        + "'. Trying next category."));
+                continue;
+            }
+
+            sleepTask(1000);
+            RawImageData researchTextScreenshot = emuManager.captureScreen(EMULATOR_NUMBER);
+            ImageSearchResultData candidate = researchTextScreenshot == null ? null
+                    : emuManager.locatePattern(EMULATOR_NUMBER, researchTextScreenshot,
+                            TemplatesEnum.RESEARCH_TEXT, 80.0);
+            if (candidate != null && candidate.isFound()) {
+                logInfo(routineLogResearchLine("'" + category.label() + "' has an available research."));
+                return candidate;
+            }
+
+            logInfo(routineLogResearchLine("'" + category.label()
+                    + "' node did not open a research. Trying next category."));
+            pressBack();
+            sleepTask(500);
+        }
+        return null;
+    }
+
+private void tapCategoryTab(ResearchCategoryEnum category) {
+        switch (category) {
+            case GROWTH -> tapRandomPoint(new PointData(58, 88), new PointData(211, 137));
+            case ECONOMY -> tapRandomPoint(new PointData(274, 84), new PointData(445, 142));
+            case BATTLE -> tapRandomPoint(new PointData(499, 99), new PointData(671, 139));
+        }
+    }
+
+private boolean findAndTapResearchNode() {
+        logDebug(routineLogResearchLine("Normalizing research menu with swipes..."));
+        for (int i = 0; i < 3; i++) {
+            swipe(new PointData(489, 320), new PointData(489, 1156));
+            sleepTask(500);
+        }
+
+        TemplatesEnum[] researchTemplates = {
+                TemplatesEnum.RESEARCH_0_3,
+                TemplatesEnum.RESEARCH_1_3,
+                TemplatesEnum.RESEARCH_2_3
+        };
+
+        for (int scrollAttempt = 0; scrollAttempt < MAX_SCROLL_ATTEMPTS_LIMIT; scrollAttempt++) {
+            checkPreemption();
+            sleepTask(500);
+
+            RawImageData researchScreenshot = emuManager.captureScreen(EMULATOR_NUMBER);
+            if (researchScreenshot == null) {
+                logWarning(routineLogResearchLine("Could not capture screenshot for research template search."));
+                continue;
+            }
+
+            List<ImageSearchResultData> foundResults = new ArrayList<>();
+            for (TemplatesEnum template : researchTemplates) {
+                // Single-hit search would return only the single best-correlated occurrence
+                // across the whole screen. An untouched tree renders several nodes with the
+                // identical "X/3" badge at once, so it must find ALL of them here for
+                // "topmost of foundResults" below to actually mean the topmost node on screen
+                // instead of an arbitrary same-looking match.
+                List<ImageSearchResultData> templateResults = emuManager.locateAllPatterns(
+                        EMULATOR_NUMBER, researchScreenshot, template,
+                        new PointData(0, 0), new PointData(720, 1280), 90.0, 10);
+                if (!templateResults.isEmpty()) {
+                    logInfo(routineLogResearchLine("Detected " + templateResults.size()
+                            + " node(s) with template: " + template.name()));
+                    foundResults.addAll(templateResults);
+                }
+            }
+
+            if (!foundResults.isEmpty()) {
+                ImageSearchResultData highest = foundResults.stream()
+                        .min(Comparator.comparingInt(r -> r.getPoint().getY()))
+                        .get();
+                logInfo(routineLogResearchLine("Pressing research template at position: ("
+                        + highest.getPoint().getX() + ", " + highest.getPoint().getY() + ") with offset"));
+
+                PointData researchPoint = highest.getPoint();
+                tapPoint(new PointData(researchPoint.getX() + RESEARCH_CLICK_OFFSET_X_VALUE,
+                        researchPoint.getY() + RESEARCH_CLICK_OFFSET_Y_VALUE));
+                sleepTask(300);
+                return true;
+            }
+
+            logDebug(routineLogResearchLine("Zero research templates detected, scrolling up (attempt "
+                    + (scrollAttempt + 1) + "/" + MAX_SCROLL_ATTEMPTS_LIMIT + ")"));
+            swipe(new PointData(489, 800), new PointData(489, 300));
+        }
+        return false;
     }
 
 private String routineLogResearchLine(String note) {

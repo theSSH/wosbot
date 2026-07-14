@@ -90,6 +90,7 @@ public enum ConfigurationKeyEnum {
     RESEARCH_ECONOMY_BOOL                       ("false",   Boolean.class,  ConfigCategory.CITY),
     RESEARCH_ENABLED_BOOL                       ("false",   Boolean.class,  ConfigCategory.CITY),
     RESEARCH_GROWTH_BOOL                        ("false",   Boolean.class,  ConfigCategory.CITY),
+    RESEARCH_PRIORITIES_STRING                  ("growth:Growth:1:true|economy:Economy:2:true|battle:Battle:3:true", String.class, ConfigCategory.CITY),
 
     /* ─────────── dailies ─────────── */
 

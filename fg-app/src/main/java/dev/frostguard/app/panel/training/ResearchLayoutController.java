@@ -3,7 +3,9 @@ package dev.frostguard.app.panel.training;
 import java.util.Map;
 
 import dev.frostguard.api.configs.ConfigurationKeyEnum;
+import dev.frostguard.api.configs.ResearchCategoryEnum;
 import dev.frostguard.app.shared.AbstractProfileController;
+import dev.frostguard.app.shared.PriorityListView;
 import javafx.fxml.FXML;
 import javafx.scene.control.CheckBox;
 
@@ -13,13 +15,7 @@ public class ResearchLayoutController extends AbstractProfileController {
 	private CheckBox checkBoxEnableResearch;
 
 	@FXML
-	private CheckBox checkBoxGrowth;
-
-	@FXML
-	private CheckBox checkBoxEconomy;
-
-	@FXML
-	private CheckBox checkBoxBattle;
+	private PriorityListView researchPriorities;
 
 	@FXML
 	private void initialize() {
@@ -29,10 +25,8 @@ public class ResearchLayoutController extends AbstractProfileController {
 
 	private void registerResearchControls() {
 		Map.of(
-				checkBoxEnableResearch, ConfigurationKeyEnum.RESEARCH_ENABLED_BOOL,
-				checkBoxGrowth, ConfigurationKeyEnum.RESEARCH_GROWTH_BOOL,
-				checkBoxEconomy, ConfigurationKeyEnum.RESEARCH_ECONOMY_BOOL,
-				checkBoxBattle, ConfigurationKeyEnum.RESEARCH_BATTLE_BOOL)
+				checkBoxEnableResearch, ConfigurationKeyEnum.RESEARCH_ENABLED_BOOL)
 				.forEach(this::registerCheckBox);
+		registerPriorityList(researchPriorities, ConfigurationKeyEnum.RESEARCH_PRIORITIES_STRING, ResearchCategoryEnum.class);
 	}
 }
