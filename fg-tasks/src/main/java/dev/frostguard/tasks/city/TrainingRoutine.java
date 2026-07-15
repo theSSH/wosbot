@@ -171,6 +171,13 @@ protected void loadConfiguration() {
 
         List<QueueSlot> analyzedQueues = inspectAllQueues();
 
+        enabledTroopTypes.stream()
+                .map(type -> Map.entry(type, reservationUntil(type)))
+                .filter(entry -> entry.getValue().isPresent())
+                .forEach(entry -> logInfo(routineLogTrainingLine(
+                        "Skipping " + entry.getKey() + " training while reserved for construction; next check at "
+                                + entry.getValue().orElseThrow().format(DATETIME_FORMATTER))));
+
         if (manageSoonReadyQueue(analyzedQueues))
             return;
 
@@ -321,6 +328,7 @@ private void refreshMinistryAppointmentIfNeeded() {
 private List<LocalDateTime> extractExistingCompletionTimesFlow(List<QueueSlot> queues) {
         return queues.stream()
                 .filter(q -> q.status() == QueueMood.TRAINING)
+                .filter(q -> !isReservedForConstruction(q.type()))
                 .map(QueueSlot::readyAt)
                 .filter(Objects::nonNull)
                 .toList();
@@ -711,13 +719,16 @@ private List<Integer> locateUnknownQueueIndices(List<QueueSlot> results) {
     }
 
 private void deferToEarliestCompletion(List<LocalDateTime> completionTimes) {
-        if (completionTimes.isEmpty()) {
+        List<LocalDateTime> candidates = new ArrayList<>(completionTimes);
+        earliestReservationCheck().ifPresent(candidates::add);
+
+        if (candidates.isEmpty()) {
             logInfo(routineLogTrainingLine("Zero completion times extracted. Planning next run retry soon."));
             reschedule(LocalDateTime.now().plusMinutes(TRAINING_BUTTON_RETRY_MINUTES_VALUE));
             return;
         }
 
-        LocalDateTime earliest = completionTimes.stream()
+        LocalDateTime earliest = candidates.stream()
                 .filter(Objects::nonNull)
                 .min(LocalDateTime::compareTo)
                 .orElse(LocalDateTime.now().plusMinutes(TRAINING_BUTTON_RETRY_MINUTES_VALUE));
@@ -811,16 +822,23 @@ private boolean openUpTrainingInterface() {
 
 private boolean manageAllTrainingQueues(List<QueueSlot> queues) {
         boolean allTraining = queues.stream()
-                .allMatch(q -> q.status() == QueueMood.TRAINING);
+                .allMatch(q -> q.status() == QueueMood.TRAINING || isReservedForConstruction(q.type()));
 
         if (!allTraining) {
             return false;
         }
 
         Optional<LocalDateTime> nextReadyTime = queues.stream()
+                .filter(q -> !isReservedForConstruction(q.type()))
                 .map(QueueSlot::readyAt)
                 .filter(Objects::nonNull)
                 .min(LocalDateTime::compareTo);
+
+        Optional<LocalDateTime> reservationRelease = earliestReservationCheck();
+        if (reservationRelease.isPresent()
+                && (nextReadyTime.isEmpty() || reservationRelease.get().isBefore(nextReadyTime.get()))) {
+            nextReadyTime = reservationRelease;
+        }
 
         if (nextReadyTime.isPresent()) {
             logInfo(routineLogTrainingLine("All queues TRAINING. Planning next run to earliest completion: " +
@@ -1094,6 +1112,7 @@ private boolean manageUpgradingQueues(List<QueueSlot> queues) {
 private List<QueueSlot> filterReadyQueuesFlow(List<QueueSlot> queues) {
         return queues.stream()
                 .filter(q -> q.status() == QueueMood.COMPLETE || q.status() == QueueMood.IDLE)
+                .filter(q -> !isReservedForConstruction(q.type()))
                 .toList();
     }
 
@@ -1134,6 +1153,7 @@ private void resetTabPositionFlow() {
 private boolean manageSoonReadyQueue(List<QueueSlot> queues) {
         Optional<QueueSlot> soonReady = queues.stream()
                 .filter(q -> q.status() == QueueMood.TRAINING && q.readyAt() != null)
+                .filter(q -> !isReservedForConstruction(q.type()))
                 .filter(q -> Duration.between(LocalDateTime.now(), q.readyAt())
                         .toMinutes() <= SOON_READY_THRESHOLD_MINUTES_VALUE)
                 .findFirst();
@@ -1150,6 +1170,33 @@ private boolean manageSoonReadyQueue(List<QueueSlot> queues) {
         }
 
         return false;
+    }
+
+private boolean isReservedForConstruction(TroopTypeShape type) {
+        return reservationUntil(type).isPresent();
+    }
+
+private Optional<LocalDateTime> reservationUntil(TroopTypeShape type) {
+        ConstructionBlockerRegistry.Consumer consumer = switch (type) {
+            case INFANTRY -> ConstructionBlockerRegistry.Consumer.INFANTRY;
+            case LANCER -> ConstructionBlockerRegistry.Consumer.LANCER;
+            case MARKSMAN -> ConstructionBlockerRegistry.Consumer.MARKSMAN;
+        };
+        return ConstructionBlockerRegistry.reservationFor(profile, consumer)
+                .map(ConstructionBlockerRegistry.Reservation::retryAt)
+                .map(this::normalizeConstructionRetry);
+    }
+
+private LocalDateTime normalizeConstructionRetry(LocalDateTime retryAt) {
+        LocalDateTime minimumRetry = LocalDateTime.now().plusMinutes(TRAINING_BUTTON_RETRY_MINUTES_VALUE);
+        return retryAt.isAfter(minimumRetry) ? retryAt : minimumRetry;
+}
+
+private Optional<LocalDateTime> earliestReservationCheck() {
+        return enabledTroopTypes.stream()
+                .map(this::reservationUntil)
+                .flatMap(Optional::stream)
+                .min(LocalDateTime::compareTo);
     }
 
 private AreaData resolvePipelineArea(TroopTypeShape type) {
