@@ -4,8 +4,10 @@ import dev.frostguard.api.configs.ConfigurationKeyEnum;
 import dev.frostguard.api.configs.TemplatesEnum;
 import dev.frostguard.api.configs.TpDailyTaskEnum;
 import dev.frostguard.api.domain.AccountDescriptor;
+import dev.frostguard.api.domain.AreaData;
 import dev.frostguard.api.domain.ImageSearchResultData;
 import dev.frostguard.api.domain.PointData;
+import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
@@ -21,11 +23,29 @@ private static final int SAFETY_RESCHEDULE_MINUTES_VALUE = 30;
 
 private static final int POPUP_DISMISS_TAP_COUNT_VALUE = 3;
 
+private static final int MAX_INDIVIDUAL_CLAIMS = 20;
+
+private static final int CLAIM_PROGRESS_TOLERANCE_PIXELS = 20;
+
 private static final PointData DAILY_MISSIONS_BUTTON_VALUE = new PointData(50, 1050);
 
 private static final PointData POPUP_DISMISS_MIN_VALUE = new PointData(10, 100);
 
 private static final PointData POPUP_DISMISS_MAX_VALUE = new PointData(600, 120);
+
+private static final SearchConfig DAILY_SCREEN_TITLE_SEARCH = SearchConfig.builder()
+		.withMaxAttempts(3)
+		.withDelay(300)
+		.withThreshold(90)
+		.withArea(new AreaData(new PointData(180, 70), new PointData(540, 170)))
+		.build();
+
+private static final SearchConfig DAILY_TAB_BUTTON_SEARCH = SearchConfig.builder()
+		.withMaxAttempts(3)
+		.withDelay(300)
+		.withThreshold(90)
+		.withArea(new AreaData(new PointData(300, 1050), new PointData(720, 1200)))
+		.build();
 
 private boolean autoScheduleEnabled;
 
@@ -40,9 +60,11 @@ public DailyMissionRoutine(AccountDescriptor profile, TpDailyTaskEnum dailyMissi
 
 		hydrateTaskConfiguration();
 		reachDailyMissions();
-		switchToDailyMissionsTabFlow();
-		redeemAllRewards();
-		StatisticsService.obtain().addToCounter(profile, "Daily Missions Claimed", 1);
+		boolean dailyScreenReached = switchToDailyMissionsTabFlow();
+		boolean claimFlowCompleted = dailyScreenReached && redeemAllRewards();
+		if (claimFlowCompleted) {
+			StatisticsService.obtain().addToCounter(profile, "Daily Missions Claimed", 1);
+		}
 		dismissInterface();
 
 		configureRecurringBehaviorFlow();
@@ -62,25 +84,64 @@ private void configureRecurringBehaviorFlow() {
 				shouldRecur, autoScheduleEnabled)));
 	}
 
-private void switchToDailyMissionsTabFlow() {
-		ImageSearchResultData dailyTabResult = templateSearchHelper.locatePattern(
-				TemplatesEnum.DAILY_MISSION_DAILY_TAB,
-				SearchConfigConstants.DEFAULT_SINGLE);
+private boolean switchToDailyMissionsTabFlow() {
+		ImageSearchResultData dailyScreenTitle = templateSearchHelper.locatePattern(
+				TemplatesEnum.DAILY_MISSION_SCREEN_TITLE,
+				DAILY_SCREEN_TITLE_SEARCH);
 
-		if (dailyTabResult.isFound()) {
-			logInfo(routineLogDailyMissionLine("Switching to daily missions tab"));
-			tapPoint(dailyTabResult.getPoint());
-			sleepTask(500);
-
-		} else {
-			logDebug(routineLogDailyMissionLine("Daily tab not detected - may already be on correct tab"));
+		if (dailyScreenTitle.isFound()) {
+			logDebug(routineLogDailyMissionLine("Daily missions screen already selected"));
+			return true;
 		}
+
+		ImageSearchResultData dailyTabButton = templateSearchHelper.locatePattern(
+				TemplatesEnum.DAILY_MISSION_DAILY_TAB_BUTTON,
+				DAILY_TAB_BUTTON_SEARCH);
+
+		if (!dailyTabButton.isFound()) {
+			logWarning(routineLogDailyMissionLine("Daily tab button not detected. Skipping claims"));
+			return false;
+		}
+
+		logInfo(routineLogDailyMissionLine("Switching to daily missions tab at " + dailyTabButton.getPoint()));
+		tapPoint(dailyTabButton.getPoint());
+		sleepTask(500);
+
+		dailyScreenTitle = templateSearchHelper.locatePattern(
+				TemplatesEnum.DAILY_MISSION_SCREEN_TITLE,
+				DAILY_SCREEN_TITLE_SEARCH);
+		if (!dailyScreenTitle.isFound()) {
+			logWarning(routineLogDailyMissionLine("Daily missions title not detected after tab switch. Skipping claims"));
+			return false;
+		}
+
+		logInfo(routineLogDailyMissionLine("Daily missions screen confirmed"));
+		return true;
 	}
 
 private ImageSearchResultData seekForIndividualClaimButton() {
-		return templateSearchHelper.locatePattern(
+		ImageSearchResultData claimButton = templateSearchHelper.locatePattern(
 				TemplatesEnum.DAILY_MISSION_CLAIM_BUTTON,
 				SearchConfigConstants.DEFAULT_SINGLE);
+
+		if (!claimButton.isFound()) {
+			return claimButton;
+		}
+
+		ImageSearchResultData disabledClaimButton = templateSearchHelper.locatePattern(
+				TemplatesEnum.DAILY_MISSION_CLAIM_BUTTON_DISABLED,
+				SearchConfigConstants.DEFAULT_SINGLE);
+		if (disabledClaimButton.isFound()
+				&& sameClaimTarget(claimButton.getPoint(), disabledClaimButton.getPoint())) {
+			logDebug(routineLogDailyMissionLine("Ignoring disabled Claim button at " + claimButton.getPoint()));
+			return ImageSearchResultData.miss();
+		}
+
+		return claimButton;
+	}
+
+private boolean sameClaimTarget(PointData first, PointData second) {
+		return first.manhattanDistanceTo(second) <= CLAIM_PROGRESS_TOLERANCE_PIXELS;
 	}
 
 private String routineLogDailyMissionLine(String note) {
@@ -94,23 +155,41 @@ private LocalDateTime queueFinalCheckBeforeReset(LocalDateTime gameReset) {
 		return finalCheck;
 	}
 
-private void redeemRewardsIndividually() {
+private boolean redeemRewardsIndividually() {
 		logWarning(routineLogDailyMissionLine("'Claim All' button not detected. Collecting missions individually"));
 
-		ImageSearchResultData claimResult;
 		int claimedCount = 0;
 
-		while ((claimResult = seekForIndividualClaimButton()).isFound()) {
-			claimedCount++;
-			logDebug(routineLogDailyMissionLine("Collecting individual reward #" + claimedCount));
+		while (claimedCount < MAX_INDIVIDUAL_CLAIMS) {
+			ImageSearchResultData claimResult = seekForIndividualClaimButton();
+			if (!claimResult.isFound()) {
+				logInfo(routineLogDailyMissionLine("Individual collecting complete. Claimed " + claimedCount + " rewards"));
+				return true;
+			}
 
-			tapPoint(claimResult.getPoint());
+			claimedCount++;
+			PointData claimPoint = claimResult.getPoint();
+			logDebug(routineLogDailyMissionLine("Collecting individual reward #" + claimedCount + " at " + claimPoint));
+
+			tapPoint(claimPoint);
 			dismissRewardPopupsFlow();
 			sleepTask(500);
 
+			ImageSearchResultData nextClaim = seekForIndividualClaimButton();
+			if (nextClaim.isFound() && sameClaimTarget(claimPoint, nextClaim.getPoint())) {
+				sleepTask(500);
+				nextClaim = seekForIndividualClaimButton();
+				if (nextClaim.isFound() && sameClaimTarget(claimPoint, nextClaim.getPoint())) {
+					logWarning(routineLogDailyMissionLine("Claim button remained at " + claimPoint
+							+ " after tapping. Stopping because no visual progress was detected"));
+					return false;
+				}
+			}
 		}
 
-		logInfo(routineLogDailyMissionLine("Individual collecting complete. Claimed " + claimedCount + " rewards"));
+		logWarning(routineLogDailyMissionLine("Stopped individual claims at safety limit "
+				+ MAX_INDIVIDUAL_CLAIMS));
+		return false;
 	}
 
 private void hydrateTaskConfiguration() {
@@ -178,15 +257,16 @@ private LocalDateTime queueAtOffsetTime(LocalDateTime proposedTime, LocalDateTim
 		return proposedTime;
 	}
 
-private void redeemAllRewards() {
+private boolean redeemAllRewards() {
 		logInfo(routineLogDailyMissionLine("Scanning for claim buttons"));
 
 		ImageSearchResultData claimAllResult = seekForClaimAllButton();
 
 		if (claimAllResult.isFound()) {
 			redeemAllRewardsAtOnce(claimAllResult);
+			return true;
 		} else {
-			redeemRewardsIndividually();
+			return redeemRewardsIndividually();
 		}
 	}
 
