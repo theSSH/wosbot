@@ -10,6 +10,7 @@ import dev.frostguard.api.domain.PointData;
 import dev.frostguard.api.domain.PriorityItemData;
 import dev.frostguard.api.domain.RawImageData;
 import dev.frostguard.engine.config.PriorityConfigResolver;
+import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
@@ -33,6 +34,39 @@ private static final int RESEARCH_CLICK_OFFSET_X_VALUE = -3;
 private static final int RESEARCH_CLICK_OFFSET_Y_VALUE = -54;
 
 private static final int MAX_SCROLL_ATTEMPTS_LIMIT = 10;
+
+private static final PointData RESEARCH_ACTION_TOP_LEFT = new PointData(500, 1135);
+
+private static final PointData RESEARCH_ACTION_BOTTOM_RIGHT = new PointData(710, 1250);
+
+private static final SearchConfig RESEARCH_ACTION_RESILIENT = SearchConfig.builder()
+        .withMaxAttempts(5)
+        .withDelay(300)
+        .withThreshold(90)
+        .withCoordinates(RESEARCH_ACTION_TOP_LEFT, RESEARCH_ACTION_BOTTOM_RIGHT)
+        .build();
+
+private static final SearchConfig RESEARCH_ACTION_RECHECK = SearchConfig.builder()
+        .withMaxAttempts(2)
+        .withDelay(300)
+        .withThreshold(90)
+        .withCoordinates(RESEARCH_ACTION_TOP_LEFT, RESEARCH_ACTION_BOTTOM_RIGHT)
+        .build();
+
+private static final SearchConfig REPLENISH_BUTTON_RECHECK = SearchConfig.builder()
+        .withMaxAttempts(2)
+        .withDelay(300)
+        .withThreshold(90)
+        .withCoordinates(new PointData(180, 1070), new PointData(535, 1195))
+        .build();
+
+private static final PointData REPLENISH_CONFIRM_POINT = new PointData(511, 1056);
+
+private static final int COMPLETED_RESEARCH_RETRY_SECONDS = 10;
+
+private static final int RESEARCH_TIMER_RETRY_MINUTES = 1;
+
+private static final int INSUFFICIENT_RESOURCES_RETRY_MINUTES = 60;
 
 public ResearchRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
         super(profile, tpTask);
@@ -163,27 +197,13 @@ public ResearchRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
                 sleepTask(500);
 
 
-                try {
-                    String confirmText = emuManager.readText(
-                            EMULATOR_NUMBER,
-                            new PointData(545, 1171),
-                            new PointData(660, 1216)).trim();
-                    logInfo(routineLogResearchLine("Research confirm button OCR text: '" + confirmText + "'"));
-
-                    if (!confirmText.toLowerCase().contains("speedup")) {
+                if (!replenishResourcesAndRetryStart(researchTextResult.getPoint())) {
+                    return;
+                }
 
 
-                        tapPoint(new PointData(600, 1190));
-                        sleepTask(1000);
-                    } else {
-                        logInfo(routineLogResearchLine("Button says 'Speedup'. Skipping click to safely read remaining time."));
-                    }
-                } catch (Exception e) {
-                    logWarning(routineLogResearchLine("Error OCRing confirm button: " + e.getMessage()));
-
-
-                    tapPoint(new PointData(600, 1190));
-                    sleepTask(1000);
+                if (!ensureResearchIsRunningAfterHelp()) {
+                    return;
                 }
 
 
@@ -227,10 +247,111 @@ public ResearchRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
                     this.reschedule(rescheduleTime);
                     return;
                 } else {
-                    logWarning(routineLogResearchLine("Could not OCR research time. Falling back to 1 hour reschedule."));
+                    logWarning(routineLogResearchLine("Could not OCR running research time. Retrying in "
+                            + RESEARCH_TIMER_RETRY_MINUTES + " minute."));
                 }
 
-        this.reschedule(LocalDateTime.now().plusHours(1));
+        this.reschedule(LocalDateTime.now().plusMinutes(RESEARCH_TIMER_RETRY_MINUTES));
+    }
+
+private boolean replenishResourcesAndRetryStart(PointData researchButton) {
+        ImageSearchResultData replenishAllButton = templateSearchHelper.locatePattern(
+                TemplatesEnum.REPLENISH_ALL_BUTTON, REPLENISH_BUTTON_RECHECK);
+        if (!isFound(replenishAllButton)) {
+            return true;
+        }
+
+        // An unaffordable research opens the shared "Obtain more" screen instead
+        // of Help/Speedup. Use owned resource items, confirm, then retry Research.
+        logInfo(routineLogResearchLine("Insufficient resources detected. Replenishing and retrying start."));
+        tapPoint(replenishAllButton.getPoint());
+        sleepTask(500);
+        tapPoint(REPLENISH_CONFIRM_POINT);
+        sleepTask(1000);
+        tapPoint(researchButton);
+        sleepTask(800);
+
+        replenishAllButton = templateSearchHelper.locatePattern(
+                TemplatesEnum.REPLENISH_ALL_BUTTON, REPLENISH_BUTTON_RECHECK);
+        if (!isFound(replenishAllButton)) {
+            return true;
+        }
+
+        logWarning(routineLogResearchLine("Still insufficient after replenish. Rechecking in "
+                + INSUFFICIENT_RESOURCES_RETRY_MINUTES + " min."));
+        pressBack();
+        this.reschedule(LocalDateTime.now().plusMinutes(INSUFFICIENT_RESOURCES_RETRY_MINUTES));
+        return false;
+    }
+
+private boolean ensureResearchIsRunningAfterHelp() {
+        ImageSearchResultData helpButton = templateSearchHelper.locatePattern(
+                TemplatesEnum.RESEARCH_HELP_BUTTON, RESEARCH_ACTION_RESILIENT);
+
+        if (isFound(helpButton)) {
+            logInfo(routineLogResearchLine("Research Help button detected. Pressing it."));
+            tapPoint(helpButton.getPoint());
+            sleepTask(300);
+        } else {
+            ImageSearchResultData speedupButton = templateSearchHelper.locatePattern(
+                    TemplatesEnum.RESEARCH_SPEEDUP_BUTTON, RESEARCH_ACTION_RECHECK);
+            if (isFound(speedupButton)) {
+                logInfo(routineLogResearchLine("Research is already running; Speedup button detected."));
+                return true;
+            }
+
+            logWarning(routineLogResearchLine(
+                    "Neither Help nor Speedup button appeared after starting research. Retrying shortly."));
+            rescheduleShortResearchRetry();
+            return false;
+        }
+
+        ImageSearchResultData speedupButton = templateSearchHelper.locatePattern(
+                TemplatesEnum.RESEARCH_SPEEDUP_BUTTON, RESEARCH_ACTION_RESILIENT);
+        if (isFound(speedupButton)) {
+            logInfo(routineLogResearchLine("Speedup button detected after Help; research is still running."));
+            return true;
+        }
+
+        // A delayed or missed Help tap leaves the same button visible. Retry once before
+        // treating the vanished bottom panel as an alliance-help instant completion.
+        ImageSearchResultData remainingHelpButton = templateSearchHelper.locatePattern(
+                TemplatesEnum.RESEARCH_HELP_BUTTON, RESEARCH_ACTION_RECHECK);
+        if (isFound(remainingHelpButton)) {
+            logInfo(routineLogResearchLine("Help button remained visible. Retrying the tap once."));
+            tapPoint(remainingHelpButton.getPoint());
+            sleepTask(300);
+
+            speedupButton = templateSearchHelper.locatePattern(
+                    TemplatesEnum.RESEARCH_SPEEDUP_BUTTON, RESEARCH_ACTION_RESILIENT);
+            if (isFound(speedupButton)) {
+                logInfo(routineLogResearchLine("Speedup button detected after Help retry; research is still running."));
+                return true;
+            }
+
+            remainingHelpButton = templateSearchHelper.locatePattern(
+                    TemplatesEnum.RESEARCH_HELP_BUTTON, RESEARCH_ACTION_RECHECK);
+            if (isFound(remainingHelpButton)) {
+                logWarning(routineLogResearchLine("Help button still visible after retry. Retrying research shortly."));
+                rescheduleShortResearchRetry();
+                return false;
+            }
+        }
+
+        logInfo(routineLogResearchLine(
+                "Neither Help nor Speedup remains; alliance help completed the research instantly."));
+        rescheduleShortResearchRetry();
+        return false;
+    }
+
+private boolean isFound(ImageSearchResultData result) {
+        return result != null && result.isFound();
+    }
+
+private void rescheduleShortResearchRetry() {
+        LocalDateTime retryAt = LocalDateTime.now().plusSeconds(COMPLETED_RESEARCH_RETRY_SECONDS);
+        logInfo(routineLogResearchLine("Planning next research check for: " + retryAt));
+        this.reschedule(retryAt);
     }
 
 private ImageSearchResultData findResearchInPriorityCategories() {
