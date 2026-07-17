@@ -85,6 +85,8 @@ public enum ConfigurationKeyEnum {
     CITY_ACCEPT_NEW_SURVIVORS_BOOL              ("false",   Boolean.class,  ConfigCategory.CITY),
     CITY_ACCEPT_NEW_SURVIVORS_OFFSET_INT        ("60",      Integer.class,  ConfigCategory.CITY),
     CITY_UPGRADE_FURNACE_BOOL                   ("false",   Boolean.class,  ConfigCategory.CITY),
+    CITY_UPGRADE_RESERVE_PRODUCTION_BOOL        ("true",    Boolean.class,  ConfigCategory.CITY),
+    CITY_UPGRADE_CONSTRUCTION_LOCK_STRING       ("",        String.class,   ConfigCategory.CITY),
     CITY_UPGRADE_PRIORITISE_FURNACE_BOOL        ("false",   Boolean.class,  ConfigCategory.CITY),
     RESEARCH_BATTLE_BOOL                        ("false",   Boolean.class,  ConfigCategory.CITY),
     RESEARCH_ECONOMY_BOOL                       ("false",   Boolean.class,  ConfigCategory.CITY),

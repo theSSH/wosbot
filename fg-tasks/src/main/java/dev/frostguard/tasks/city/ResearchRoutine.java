@@ -43,8 +43,23 @@ public ResearchRoutine(AccountDescriptor profile, TpDailyTaskEnum tpTask) {
         return LaunchPoint.HOME;
     }
 
-@Override
+    @Override
     protected void execute() {
+
+        var constructionReservation = ConstructionBlockerRegistry.reservationFor(
+                profile, ConstructionBlockerRegistry.Consumer.RESEARCH);
+        if (constructionReservation.isPresent()) {
+            LocalDateTime now = LocalDateTime.now();
+            LocalDateTime retryAt = constructionReservation.get().retryAt();
+            if (!retryAt.isAfter(now)) {
+                retryAt = now.plusMinutes(5);
+            }
+            logInfo(routineLogResearchLine(
+                    "Research Center remains reserved until construction start is verified. Next check at "
+                            + retryAt + "; training camps remain independent."));
+            this.reschedule(retryAt);
+            return;
+        }
 
 
         navigationHelper.ensureCorrectScreenLocation(LaunchPoint.HOME);
