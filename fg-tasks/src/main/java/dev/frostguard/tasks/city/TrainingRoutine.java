@@ -1291,7 +1291,7 @@ private void pressTrainButton() {
 
             emuManager.captureScreen(EMULATOR_NUMBER);
             ImageSearchResultData replenishAll = templateSearchHelper.locatePattern(
-                    TRAINING_REPLENISH_ALL,
+                    REPLENISH_ALL_BUTTON,
                     SearchConfigConstants.DEFAULT_SINGLE);
 
             if (replenishAll.isFound()) {
