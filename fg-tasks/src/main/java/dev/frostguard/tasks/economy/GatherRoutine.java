@@ -312,6 +312,7 @@ public class GatherRoutine extends DelayedTask {
         int deployed = 0;
         int noNode = 0;
         int blocked = 0;
+        int sameTargetBlocked = 0;
         logInfo(String.format("Gather fill: active=%d/%d idleSlots=%d freeSlots=%d pool=%s",
                 currentActive, activeQueues, idleSlotCount, freeSlots, rotationPool));
 
@@ -330,7 +331,7 @@ public class GatherRoutine extends DelayedTask {
 
         if (freeSlots <= 0) {
             saveRotationPool();
-            return new GatherFillResult(0, 0, 0, false);
+            return new GatherFillResult(0, 0, 0, 0, false, 0);
         }
 
         // Shuffle loaded pool for randomness in this run
@@ -379,7 +380,7 @@ public class GatherRoutine extends DelayedTask {
                     if (deployResult == GatherDeployResult.NO_TROOPS_AVAILABLE) {
                         remaining = 0;
                         saveRotationPool();
-                        return new GatherFillResult(deployed, noNode, blocked, true);
+                        return new GatherFillResult(deployed, noNode, blocked, sameTargetBlocked, true, 0);
                     }
                     // Remove failed type from pool to avoid retrying it endlessly
                     rotationPool.remove(type);
@@ -390,6 +391,10 @@ public class GatherRoutine extends DelayedTask {
                     if (deployResult == GatherDeployResult.BLOCKED) {
                         blocked++;
                     }
+                    if (deployResult == GatherDeployResult.SAME_TARGET) {
+                        blocked++;
+                        sameTargetBlocked++;
+                    }
                 }
             }
 
@@ -398,7 +403,7 @@ public class GatherRoutine extends DelayedTask {
         }
 
         saveRotationPool();
-        return new GatherFillResult(deployed, noNode, blocked, false);
+        return new GatherFillResult(deployed, noNode, blocked, sameTargetBlocked, false, remaining);
     }
 
     private void loadRotationPool() {
@@ -682,24 +687,49 @@ public class GatherRoutine extends DelayedTask {
         int minLevel = downgradeLevelOnMissingNode ? 1 : targetLevel;
 
         for (int level = targetLevel; level >= minLevel; level--) {
-            logInfo(String.format("Gather deploy attempt: type=%s level=%d onlyFull=%s", type, level, onlyFullResources));
+            int sameTargetFailures = 0;
+            GatherDeployResult result;
 
-            if (!openSearchMenu()) {
-                return retryLater(GatherDeployResult.BLOCKED);
-            }
-            if (!selectTile(type)) {
-                return retryLater(GatherDeployResult.BLOCKED);
-            }
-            if (!setLevel(level)) {
-                return retryLater(GatherDeployResult.BLOCKED);
-            }
-            setOnlyFullResourcesSearch(onlyFullResources);
-            if (!executeSearch()) {
-                return retryLater(GatherDeployResult.BLOCKED);
-            }
+            do {
+                logInfo(String.format(
+                        "Gather deploy attempt: type=%s level=%d onlyFull=%s nodeAttempt=%d/%d",
+                        type, level, onlyFullResources, sameTargetFailures + 1,
+                        GatherSameTargetRetryPolicy.MAX_NODE_ATTEMPTS));
 
-            GatherDeployResult result = deployMarchAction(type, level);
+                if (!openSearchMenu()) {
+                    return retryLater(GatherDeployResult.BLOCKED);
+                }
+                if (!selectTile(type)) {
+                    return retryLater(GatherDeployResult.BLOCKED);
+                }
+                if (!setLevel(level)) {
+                    return retryLater(GatherDeployResult.BLOCKED);
+                }
+                setOnlyFullResourcesSearch(onlyFullResources);
+                if (!executeSearch()) {
+                    return retryLater(GatherDeployResult.BLOCKED);
+                }
+
+                result = deployMarchAction(type, level);
+                if (result == GatherDeployResult.SAME_TARGET) {
+                    sameTargetFailures++;
+                    if (GatherSameTargetRetryPolicy.shouldSearchAnotherNode(sameTargetFailures)) {
+                        logInfo(String.format(
+                                "Gather target already has an incoming march: type=%s level=%d. Searching another node.",
+                                type, level));
+                        sleepTask(500);
+                    }
+                }
+            } while (result == GatherDeployResult.SAME_TARGET
+                    && GatherSameTargetRetryPolicy.shouldSearchAnotherNode(sameTargetFailures));
+
             if (result == GatherDeployResult.DEPLOYED) {
+                return result;
+            }
+            if (result == GatherDeployResult.SAME_TARGET) {
+                logInfo(String.format(
+                        "Gather target conflict persisted after %d node attempts: type=%s level=%d.",
+                        sameTargetFailures, type, level));
                 return result;
             }
             if (result != GatherDeployResult.NO_NODE_FOUND || level == minLevel) {
@@ -821,11 +851,10 @@ public class GatherRoutine extends DelayedTask {
             return GatherDeployResult.BLOCKED;
         }
 
-        if (templateSearchHelper.locatePattern(TemplatesEnum.TROOPS_ALREADY_MARCHING, SearchConfig.builder().build())
-                .isFound()) {
+        if (deploymentHelper.isSameTargetDialog()) {
             pressBack();
             pressBack();
-            return GatherDeployResult.BLOCKED;
+            return GatherDeployResult.SAME_TARGET;
         }
         return GatherDeployResult.DEPLOYED;
     }
@@ -871,6 +900,23 @@ public class GatherRoutine extends DelayedTask {
     }
 
     private void finalizeReschedule(GatherFillResult fillResult) {
+        if (GatherSameTargetRetryPolicy.requiresCooldown(
+                fillResult.sameTargetBlocked(), fillResult.unfilledSlots())) {
+            LocalDateTime retryAt = LocalDateTime.now()
+                    .plus(GatherSameTargetRetryPolicy.EXHAUSTED_RETRY_DELAY);
+            logInfo(String.format(
+                    "Gather fill finished: deployed=%d noNode=%d blocked=%d noTroops=%s. "
+                            + "Same-target conflicts left %d slot(s) unfilled; retrying node search in %d minutes at %s.",
+                    fillResult.deployed(),
+                    fillResult.noNode(),
+                    fillResult.blocked(),
+                    fillResult.stoppedForNoTroops(),
+                    fillResult.unfilledSlots(),
+                    GatherSameTargetRetryPolicy.EXHAUSTED_RETRY_DELAY.toMinutes(),
+                    GameTimeUtils.formatCountdown(retryAt)));
+            reschedule(retryAt);
+            return;
+        }
         if (earliestReschedule != null) {
             reschedule(earliestReschedule);
             return;
@@ -1163,14 +1209,16 @@ public class GatherRoutine extends DelayedTask {
     private record ActiveGatherMarchCandidate(GatherType type, int queueIndex, LocalDateTime returnTime) {
     }
 
-    private record GatherFillResult(int deployed, int noNode, int blocked, boolean stoppedForNoTroops) {
+    private record GatherFillResult(int deployed, int noNode, int blocked, int sameTargetBlocked,
+                                    boolean stoppedForNoTroops, int unfilledSlots) {
     }
 
     private enum GatherDeployResult {
         DEPLOYED,
         NO_NODE_FOUND,
         NO_TROOPS_AVAILABLE,
-        BLOCKED
+        BLOCKED,
+        SAME_TARGET
     }
 
     private enum RecallReason {
