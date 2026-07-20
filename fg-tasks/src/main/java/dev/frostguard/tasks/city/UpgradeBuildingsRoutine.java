@@ -2,6 +2,7 @@ package dev.frostguard.tasks.city;
 
 import dev.frostguard.api.configs.TpDailyTaskEnum;
 import dev.frostguard.api.domain.*;
+import dev.frostguard.engine.helper.TemplateSearchHelper.SearchConfig;
 import dev.frostguard.engine.nav.SearchConfigConstants;
 import dev.frostguard.engine.schedule.DelayedTask;
 import dev.frostguard.engine.schedule.LaunchPoint;
@@ -25,6 +26,7 @@ import static dev.frostguard.api.configs.TemplatesEnum.BUILDING_BUTTON_UPGRADE;
 import static dev.frostguard.api.configs.TemplatesEnum.BUILDING_SURVIVOR_BUTTON_UPGRADE;
 import static dev.frostguard.api.configs.TemplatesEnum.GAME_HOME_SHORTCUTS_HELP_REQUEST4;
 import static dev.frostguard.api.configs.TemplatesEnum.GAME_HOME_SHORTCUTS_OBTAIN;
+import static dev.frostguard.api.configs.TemplatesEnum.REPLENISH_ALL_BUTTON;
 import static dev.frostguard.engine.nav.ButtonConstants.*;
 import static dev.frostguard.engine.nav.LeftMenuTextSettings.*;
 
@@ -47,6 +49,17 @@ private static final int COMPLETION_SETTLE_SECONDS = 2;
 private static final int MAX_RECOMMENDED_BUILDING_ATTEMPTS = 2;
 
 private static final int TEMPLATE_TAP_RADIUS = 8;
+
+private static final int MAX_RESOURCE_REPLENISHMENTS = 4;
+
+private static final PointData REPLENISH_CONFIRM_POINT = new PointData(511, 1056);
+
+private static final SearchConfig REPLENISH_BUTTON_RECHECK = SearchConfig.builder()
+        .withMaxAttempts(2)
+        .withDelay(300)
+        .withThreshold(90)
+        .withCoordinates(new PointData(180, 1070), new PointData(535, 1195))
+        .build();
 
 private final List<AreaData> queues = new ArrayList<>(Arrays.asList(QUEUE_AREA_1_VALUE, QUEUE_AREA_2_VALUE));
 
@@ -200,22 +213,54 @@ private String routineLogUpgradeBuildingsLine(String note) {
         return "UpgradeBuildingsRoutine | " + note;
     }
 
-private void refillResourcesIfNeededFlow() {
-        ImageSearchResultData result;
-        while ((result = templateSearchHelper.locatePattern(GAME_HOME_SHORTCUTS_OBTAIN,
-                SearchConfigConstants.DEFAULT_SINGLE)).isFound()) {
-            logInfo(routineLogUpgradeBuildingsLine("Refilling resources for the upgrade..."));
-            tapRandomPoint(result.getPoint(), result.getPoint());
-            sleepTask(500);
+private boolean refillResourcesIfNeededFlow() {
+        var result = RepeatedResourceReplenishmentFlow.run(
+                new RepeatedResourceReplenishmentFlow.Ui() {
+                    @Override
+                    public PointData findReplenishAll() {
+                        return foundPoint(templateSearchHelper.locatePattern(
+                                REPLENISH_ALL_BUTTON, REPLENISH_BUTTON_RECHECK));
+                    }
 
+                    @Override
+                    public PointData findObtain() {
+                        return foundPoint(templateSearchHelper.locatePattern(
+                                GAME_HOME_SHORTCUTS_OBTAIN, SearchConfigConstants.DEFAULT_SINGLE));
+                    }
 
-            tapPoint(new PointData(358, 1135));
-            sleepTask(300);
+                    @Override
+                    public void openObtain(PointData point) {
+                        tapPoint(point);
+                        sleepTask(500);
+                    }
 
+                    @Override
+                    public void replenishAndConfirm(PointData point) {
+                        logInfo(routineLogUpgradeBuildingsLine("Refilling one missing resource for the upgrade..."));
+                        tapPoint(point);
+                        sleepTask(300);
+                        tapPoint(REPLENISH_CONFIRM_POINT);
+                        sleepTask(1000);
+                    }
+                },
+                MAX_RESOURCE_REPLENISHMENTS);
 
-            tapPoint(new PointData(511, 1056));
-            sleepTask(1000);
+        if (result.ready()) {
+            if (result.replenishedResources() > 0) {
+                logInfo(routineLogUpgradeBuildingsLine(
+                        "Replenished " + result.replenishedResources() + " missing resource(s)."));
+            }
+            return true;
         }
+
+        logWarning(routineLogUpgradeBuildingsLine(
+                "Resource replenishment did not finish (" + result.outcome()
+                        + "). Skipping the building confirmation."));
+        return false;
+    }
+
+private PointData foundPoint(ImageSearchResultData result) {
+        return result != null && result.isFound() ? result.getPoint() : null;
     }
 
 private void handleSurvivorBuilding() {
@@ -238,7 +283,9 @@ private void handleSurvivorBuilding() {
         tapRandomPoint(survivorUpgrade.getPoint(), survivorUpgrade.getPoint(), 1, 1000);
 
 
-        refillResourcesIfNeededFlow();
+        if (!refillResourcesIfNeededFlow()) {
+            return;
+        }
 
 
         tapRandomPoint(new PointData(450, 1190), new PointData(600, 1230), 1, 1000);
@@ -583,7 +630,9 @@ private void startBuildingAction(String actionName, PointData buttonTopLeft, Poi
         sleepTask(1000);
 
 
-        refillResourcesIfNeededFlow();
+        if (!refillResourcesIfNeededFlow()) {
+            return;
+        }
 
 
         tapRandomPoint(BUILDING_CONFIRM_BUTTON_AREA_VALUE.topLeft(), BUILDING_CONFIRM_BUTTON_AREA_VALUE.bottomRight());
